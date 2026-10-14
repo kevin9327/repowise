@@ -14,20 +14,21 @@ from typing import Any
 
 from sqlalchemy import select
 
-from repowise.core.report.model import ReportContext, Section, check, report_sections
+from repowise.core.report.model import ReportContext, Section, capped, check, report_sections
 
 QUARTER_DAYS = 90
 _LEFT_OUT = frozenset({"attribution_jump"})
 _METHOD = (
-    "the event diff rules applied to two stored component snapshots with the same analyzer "
-    f"and parser stamp, at least {QUARTER_DAYS} days apart"
+    "the event diff rules, for the event kinds the repository has on, applied to two "
+    f"stored component snapshots with the same analyzer and parser stamp, at least "
+    f"{QUARTER_DAYS} days apart"
 )
 
 
 async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
     from repowise.core.events.diff import diff_snapshots
     from repowise.core.events.model import KINDS
-    from repowise.core.events.store import GAP_STAMP, run_facts
+    from repowise.core.events.store import GAP_STAMP, load_event_settings, run_facts
     from repowise.core.persistence.models import SnapshotRun
 
     runs = select(SnapshotRun).where(
@@ -61,9 +62,12 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
         ]
     before = await run_facts(ctx.session, baseline.id)
     after = await run_facts(ctx.session, newest.id)
+    # The kinds this repository's events config turns on, so a move counts here
+    # exactly when it would fire as an event (new_hotspot is off by default).
+    kinds = load_event_settings(ctx.repo_root).kinds - _LEFT_OUT
     moved: dict[str, list[str]] = defaultdict(list)
     for kind, component, subject, _evidence in diff_snapshots(before, after):
-        if kind not in _LEFT_OUT:
+        if kind in kinds:
             moved[kind].append(f"{component}: {subject}" if subject else component)
     span = f"{baseline.taken_at.date().isoformat()} to {newest.taken_at.date().isoformat()}"
     out = [
@@ -84,7 +88,7 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
             check(
                 f"trend:{kind}",
                 reason=f"{KINDS[kind].summary}: {len(moved[kind])}",
-                details=moved[kind],
+                details=capped(moved[kind]),
                 method=_METHOD,
                 basis="measured",
             )

@@ -121,3 +121,15 @@ def assessment_command(
         err_console.print(f"Wrote {fmt} report to {out_path}")
     else:
         click.echo(text, nl=False)
+    failed = [
+        f"{s['id']} ({s['repo']})" if s.get("repo") else s["id"]
+        for s in document["sections"]
+        if s.get("failed")
+    ]
+    if failed:
+        from rich.markup import escape
+
+        err_console.print(
+            f"[yellow]warning[/yellow] {len(failed)} section(s) failed and are reported as "
+            f"inconclusive: {escape(', '.join(failed))}"
+        )

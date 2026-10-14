@@ -9,7 +9,13 @@ needs data some indexes lack (outcomes, for one) returns ``None`` from
 from __future__ import annotations
 
 import importlib
+import logging
 import pkgutil
 
+_log = logging.getLogger("repowise.plugins")
+
 for _module in pkgutil.iter_modules(__path__):
-    importlib.import_module(f"{__name__}.{_module.name}")
+    try:  # one broken section must not take the others down, as with plugins
+        importlib.import_module(f"{__name__}.{_module.name}")
+    except Exception as exc:
+        _log.warning("report section module %s failed to load: %s", _module.name, exc)

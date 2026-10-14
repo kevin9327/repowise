@@ -5,7 +5,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from repowise.core.report.model import ReportContext, Section, check, report_sections
+from repowise.core.report.model import (
+    ReportContext,
+    Section,
+    check,
+    component_summary,
+    report_sections,
+)
 
 _OWNERSHIP_METHOD = (
     "declared owners (catalog spec.owner, CODEOWNERS, teams.yaml) against indexed "
@@ -67,6 +73,12 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
                 data={"gated_files": gated},
             )
         )
+    figures: dict[str, dict[str, Any]] = {}
+    outcomes = dict.fromkeys(
+        ("ownership findings", "health gated", "no health score", "nothing to note"), 0
+    )
+    quiet: list[str] = []
+    items: list[dict[str, Any]] = []
     for comp, paths in comps:
         health = rollups.get(comp.name, {}).get("health") or {"basis": "unavailable"}
         ownership = blocks.get(comp.name, {})
@@ -78,8 +90,27 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
             basis = "gated" if health.get("gated_files") else "unresolved"
             score = None
             posture = health.get("reason", "no health score")
-        source = f"declared in {comp.declared_in}" if comp.declared else f"derived ({comp.source})"
         group = owner_group_name(comp.owner)
+        figures[comp.name] = {
+            "source": comp.source,
+            "criticality": comp.criticality,
+            "tags": list(comp.tags),
+            "owning_team": group,
+            "file_count": len(paths),
+            "health": health,
+            "ownership": ownership,
+        }
+        if findings:
+            outcomes["ownership findings"] += 1
+        elif basis == "gated":
+            outcomes["health gated"] += 1
+        elif basis == "unresolved":
+            outcomes["no health score"] += 1
+        else:
+            outcomes["nothing to note"] += 1
+            quiet.append(comp.name)
+            continue
+        source = f"declared in {comp.declared_in}" if comp.declared else f"derived ({comp.source})"
         details = [
             source,
             *([f"criticality: {comp.criticality}"] if comp.criticality else []),
@@ -87,7 +118,7 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
             *([f"owning team: {group}"] if group else []),
             *(f"{f['kind']}: {f['message']}" for f in findings),
         ]
-        out.append(
+        items.append(
             check(
                 f"component:{comp.name}",
                 score=score,
@@ -97,17 +128,20 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
                     f"{health.get('method', 'file health scores')}; ownership: {_OWNERSHIP_METHOD}"
                 ),
                 basis=basis,
-                data={
-                    "source": comp.source,
-                    "criticality": comp.criticality,
-                    "tags": list(comp.tags),
-                    "owning_team": group,
-                    "file_count": len(paths),
-                    "health": health,
-                    "ownership": ownership,
-                },
+                data=figures[comp.name],
             )
         )
+    out.append(
+        component_summary(
+            "components",
+            outcomes=outcomes,
+            quiet=quiet,
+            method=f"file health scores per component; ownership: {_OWNERSHIP_METHOD}",
+            basis="measured",
+            data={"components": figures},
+        )
+    )
+    out.extend(items)
     return out
 
 

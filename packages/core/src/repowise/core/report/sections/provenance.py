@@ -64,11 +64,11 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
     return [
         check(
             "provenance:coverage",
-            score=known / total * 10 if total else None,
             reason=f"{known} of {total} commit(s) up to {as_of} carry a known source",
             details=[f"{total - known} commit(s) carry no marker; their source is unknown"],
             method=method,
-            basis="measured",
+            # Coverage is how much is known, not a grade: no markers is unknown.
+            basis="measured" if known else "unresolved",
             data={"commits": total, "known": known, "window_days": RECENT_DAYS, "as_of": as_of},
         ),
         check(

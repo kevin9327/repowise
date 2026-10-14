@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from repowise.core.report.model import ReportContext, Section, check, report_sections
+from repowise.core.report.model import (
+    ReportContext,
+    Section,
+    capped,
+    check,
+    component_summary,
+    report_sections,
+)
 
 _METHOD = "files git history flags as hotspots (high recent churn), from the component rollups"
 
@@ -21,25 +28,36 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
                 basis="unresolved",
             )
         ]
-    by_component = sorted(
-        (
-            (name, r["hotspots"])
-            for name, r in rollups.items()
-            if name is not None and r["hotspots"].get("count")
-        ),
+    components = sorted((n, r["hotspots"]) for n, r in rollups.items() if n is not None)
+    hot = sorted(
+        ((n, h) for n, h in components if h["basis"] == "measured" and h["count"]),
         key=lambda kv: (-kv[1]["count"], kv[0]),
     )
+    unresolved = [(n, h) for n, h in components if h["basis"] != "measured"]
+    quiet = [n for n, h in components if h["basis"] == "measured" and not h["count"]]
     out = [
         check(
             "hotspots",
-            reason=f"{whole['count']} hotspot file(s) across {len(by_component)} component(s)",
-            details=[f"{name}: {h['count']}" for name, h in by_component],
+            reason=f"{whole['count']} hotspot file(s) across {len(hot)} component(s)",
+            details=capped([f"{name}: {h['count']}" for name, h in hot]),
             method=_METHOD,
             basis="measured",
             data={"count": whole["count"], "top": whole["top"]},
-        )
+        ),
+        component_summary(
+            "hotspots:components",
+            outcomes={
+                "with hotspots": len(hot),
+                "no git history": len(unresolved),
+                "no hotspots": len(quiet),
+            },
+            quiet=quiet,
+            method=_METHOD,
+            basis="measured",
+            data={"components": dict(components)},
+        ),
     ]
-    for name, h in by_component:
+    for name, h in hot:
         out.append(
             check(
                 f"hotspots:{name}",
@@ -49,6 +67,10 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
                 basis="measured",
                 data=h,
             )
+        )
+    for name, h in unresolved:
+        out.append(
+            check(f"hotspots:{name}", reason=h["reason"], method=_METHOD, basis="unresolved")
         )
     return out
 

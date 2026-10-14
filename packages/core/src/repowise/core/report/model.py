@@ -63,6 +63,43 @@ def check(
     return item
 
 
+#: Detail lines one item lists before it says how many more there are.
+MAX_DETAILS = 20
+
+
+def capped(lines: list[str], limit: int = MAX_DETAILS) -> list[str]:
+    """*lines*, cut at *limit* with a closing count of the rest."""
+    if len(lines) <= limit:
+        return lines
+    return [*lines[:limit], f"and {len(lines) - limit} more"]
+
+
+def component_summary(
+    name: str,
+    *,
+    outcomes: dict[str, int],
+    quiet: list[str],
+    method: str,
+    basis: str,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    """The one summary row a per-component section opens with.
+
+    Components get an item of their own only when there is something to say;
+    the rest are named here (*quiet*), and *data* keeps every component's
+    figures, so the JSON loses nothing the shorter text leaves out.
+    """
+    counted = ", ".join(f"{label}: {n}" for label, n in outcomes.items() if n)
+    return check(
+        name,
+        reason=f"{sum(outcomes.values())} component(s); {counted or 'none'}",
+        details=[f"nothing to note: {', '.join(quiet)}"] if quiet else [],
+        method=method,
+        basis=basis,
+        data=data,
+    )
+
+
 @dataclass
 class ReportContext:
     """One indexed repository, open for reading, with shared reads cached."""

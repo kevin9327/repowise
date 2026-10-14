@@ -42,14 +42,24 @@ def _index_line(repo: dict[str, Any]) -> tuple[str, str, str]:
     return name, commit, taken
 
 
+def _line(text: Any) -> str:
+    """*text* on one line, with backticks escaped so it cannot open code."""
+    return " ".join(str(text).split()).replace("`", "\\`")
+
+
 def _cell(text: Any) -> str:
-    return str(text).replace("|", "\\|").replace("\n", " ")
+    return _line(text).replace("|", "\\|")
+
+
+def _code(text: Any) -> str:
+    """*text* as an inline code span; a backtick cannot be escaped inside one."""
+    return "`" + " ".join(str(text).split()).replace("`", "'") + "`"
 
 
 def render_markdown(document: dict[str, Any]) -> str:
     gen = document["generator"]
     lines = [
-        f"# Assessment: {document['scope'].get('name') or document['scope']['kind']}",
+        f"# Assessment: {_line(document['scope'].get('name') or document['scope']['kind'])}",
         "",
         document["notice"],
         "",
@@ -64,24 +74,25 @@ def render_markdown(document: dict[str, Any]) -> str:
     for section in document["sections"]:
         lines += [
             "",
-            f"## {_heading(section)}",
+            f"## {_line(_heading(section))}",
             "",
-            section["summary"],
+            _line(section["summary"]),
             "",
             "| Check | Score | Basis | Reason |",
             "|---|---|---|---|",
         ]
         for c in section["checks"]:
-            cells = (f"`{_cell(c['name'])}`", _score(c["score"]), c["basis"], _cell(c["reason"]))
+            name = _code(c["name"]).replace("|", "\\|")
+            cells = (name, _score(c["score"]), c["basis"], _cell(c["reason"]))
             lines.append(f"| {' | '.join(cells)} |")
         for method in dict.fromkeys(c["method"] for c in section["checks"]):
-            lines += ["", f"Method: {method}."]
+            lines += ["", f"Method: {_line(method)}."]
         detailed = [c for c in section["checks"] if c["details"]]
         if detailed:
             lines.append("")
             for c in detailed:
-                lines.append(f"- `{c['name']}`")
-                lines += [f"  - {d}" for d in c["details"]]
+                lines.append(f"- {_code(c['name'])}")
+                lines += [f"  - {_line(d)}" for d in c["details"]]
     return "\n".join(lines) + "\n"
 
 

@@ -9,7 +9,9 @@ each repository; no local absolute path is written.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from repowise.core.report.model import (
@@ -76,25 +78,67 @@ async def collect_repo(
                 check(
                     name,
                     reason=f"the section failed to collect ({type(exc).__name__})",
+                    details=[str(exc)],
                     method=section.summary,
                     basis="unresolved",
                 )
             ]
+            failed = True
+        else:
+            failed = False
         if checks is None:
             continue
         doc = {"url": DOCS_URL, "short": section.summary}
         for item in checks:
             item.setdefault("documentation", doc)
-        out.append(
-            {
-                "id": name,
-                "title": section.title,
-                "summary": section.summary,
-                "repo": ctx.alias,
-                "checks": checks,
-            }
-        )
+        entry = {
+            "id": name,
+            "title": section.title,
+            "summary": section.summary,
+            "repo": ctx.alias,
+            "checks": checks,
+        }
+        if failed:
+            entry["failed"] = True
+        out.append(scrub(entry, ctx.repo_root))
     return await _index_entry(ctx), out
+
+
+#: Absolute paths that are not the repository's own: a drive path, a UNC
+#: share, or a POSIX path under a top-level directory a machine path starts in.
+#: Ceiling: a POSIX path under another top-level directory is kept; contract ids
+#: such as ``http::GET::/users`` must survive, so a bare ``/x`` cannot be matched.
+_ABSOLUTE = re.compile(
+    r"(?<!\w)(?:[A-Za-z]:[\\/]|\\\\)[^\s'\"<>|]*"
+    r"|(?<![\w:/.])/(?:home|Users|tmp|var|private|mnt|opt|root|srv|etc|usr|Volumes)/"
+    r"[^\s'\"<>|]*"
+)
+
+
+def _scrub_text(text: str, roots: tuple[str, ...]) -> str:
+    for root in roots:
+        text = text.replace(root + "/", "").replace(root + "\\", "").replace(root, ".")
+    return _ABSOLUTE.sub("<path>", text)
+
+
+def scrub(value: Any, repo_root: Path) -> Any:
+    """*value* with the repository root made relative and any other absolute
+    path replaced, in every string it holds, so a report handed on never
+    carries a local path (a catalog read error quotes one, for instance)."""
+    resolved = Path(repo_root).resolve()
+    forms = {str(repo_root), str(resolved), resolved.as_posix(), Path(repo_root).as_posix()}
+    roots = tuple(sorted((f for f in forms if f and f != "."), key=len, reverse=True))
+
+    def walk(v: Any) -> Any:
+        if isinstance(v, str):
+            return _scrub_text(v, roots)
+        if isinstance(v, dict):
+            return {walk(k): walk(x) for k, x in v.items()}
+        if isinstance(v, list | tuple):
+            return [walk(x) for x in v]
+        return v
+
+    return walk(value)
 
 
 def assemble(
@@ -119,4 +163,4 @@ def assemble(
     }
 
 
-__all__ = ["NOTICE", "assemble", "available_sections", "collect_repo"]
+__all__ = ["NOTICE", "assemble", "available_sections", "collect_repo", "scrub"]

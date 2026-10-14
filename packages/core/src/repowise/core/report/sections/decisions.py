@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from repowise.core.report.model import ReportContext, Section, check, report_sections
+from repowise.core.report.model import (
+    ReportContext,
+    Section,
+    capped,
+    check,
+    component_summary,
+    report_sections,
+)
 
 _METHOD = (
     "accepted decisions at a governing currency whose recorded files fall in the component; "
@@ -13,38 +20,77 @@ _METHOD = (
 
 
 async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
-    from repowise.core.events.snapshot import governing_decisions
+    from sqlalchemy import func, select
 
+    from repowise.core.events.snapshot import governing_decisions
+    from repowise.core.persistence.models import DecisionRecord
+
+    recorded = await ctx.session.scalar(
+        select(func.count()).where(DecisionRecord.repository_id == ctx.repository_id)
+    )
+    if not recorded:
+        return [
+            check(
+                "decisions",
+                reason="no decision is recorded for this repository",
+                method=_METHOD,
+                basis="unresolved",
+            )
+        ]
     governing, stale = await governing_decisions(ctx.session, ctx.repository_id)
     titles = {d: t for pairs in governing.values() for d, t in pairs}
     out = [
         check(
             "decisions",
-            reason=f"{len(titles)} governing decision(s), {len(stale)} stale",
-            details=[f"stale: {d} {titles[d]}" for d in sorted(stale)],
+            reason=(
+                f"{len(titles)} governing decision(s) of {recorded} recorded, {len(stale)} stale"
+                + ("; zero may mean none were recorded for these files" if not titles else "")
+            ),
+            details=capped([f"stale: {d} {titles[d]}" for d in sorted(stale)]),
             method=_METHOD,
             basis="declared",
-            data={"governing": len(titles), "stale": sorted(stale)},
+            data={"governing": len(titles), "recorded": recorded, "stale": sorted(stale)},
         )
     ]
     found = await ctx.components()
+    figures: dict[str, dict[str, Any]] = {}
+    outcomes = {"with stale decisions": 0, "governed, none stale": 0, "no governing decision": 0}
+    quiet: list[str] = []
+    noted: list[dict[str, Any]] = []
     for comp in found.resolved.components:
         paths = found.resolved.files.get(comp.name, ())
         ids = sorted({d for p in paths for d, _ in governing.get(p, ())})
-        if not ids:
-            continue
         gone = [d for d in ids if d in stale]
-        out.append(
+        figures[comp.name] = {"governing": ids, "stale": gone}
+        if not gone:
+            outcomes["governed, none stale" if ids else "no governing decision"] += 1
+            if ids:
+                quiet.append(comp.name)
+            continue
+        outcomes["with stale decisions"] += 1
+        noted.append(
             check(
                 f"decisions:{comp.name}",
                 reason=f"{len(ids)} governing decision(s), {len(gone)} stale",
-                details=[f"{d}{' (stale)' if d in stale else ''}: {titles[d]}" for d in ids],
+                details=capped(
+                    [f"{d}{' (stale)' if d in stale else ''}: {titles[d]}" for d in ids]
+                ),
                 method=_METHOD,
                 basis="declared",
-                data={"governing": ids, "stale": gone},
+                data=figures[comp.name],
             )
         )
-    return out
+    out.append(
+        component_summary(
+            "decisions:components",
+            outcomes=outcomes,
+            quiet=quiet,
+            method=_METHOD,
+            basis="declared",
+            data={"components": figures},
+        )
+    )
+    return out + noted
 
 
 report_sections.register(

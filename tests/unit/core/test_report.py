@@ -158,8 +158,12 @@ def test_check_keeps_scorecard_keys_and_forces_inconclusive_without_evidence():
 async def test_components_section_scores_health_and_marks_gated_languages(ctx):
     items = await _section("components", ctx)
     assert items["component-map"]["data"]["derived"] == 2
-    api, web = items["component:api"], items["component:web"]
-    assert (api["basis"], api["score"]) == ("measured", 7.5)
+    summary = items["components"]
+    # api has nothing to note, so it is named in the summary; its figures stay in data.
+    assert "component:api" not in items
+    assert summary["details"] == ["nothing to note: api"]
+    assert summary["data"]["components"]["api"]["health"]["average"] == 7.5
+    web = items["component:web"]  # gated evidence always keeps its own item
     assert (web["basis"], web["score"]) == ("gated", -1)
     assert items["health:gated"]["data"]["gated_files"] == 1
 
@@ -173,7 +177,8 @@ async def test_hotspots_counted_per_component(ctx):
 
 async def test_bus_factor_is_per_component_and_names_nobody(ctx):
     items = await _section("bus-factor", ctx)
-    assert set(items) == {"bus-factor:api", "bus-factor:web"}
+    assert set(items) == {"bus-factor", "bus-factor:api", "bus-factor:web"}
+    assert items["bus-factor"]["reason"] == "2 component(s); bus factor 1: 1, bus factor 2: 1"
     assert items["bus-factor:api"]["reason"] == "bus factor 2"
     assert items["bus-factor:api"]["basis"] == "inferred"  # under five owned files
     text = json.dumps(items)
@@ -203,8 +208,22 @@ async def test_test_reach_keeps_measured_and_inferred_apart(ctx):
     items = await _section("test-reach", ctx)
     assert (items["test-reach"]["basis"], items["test-reach"]["score"]) == ("inferred", 3.3)
     assert (items["line-coverage"]["basis"], items["line-coverage"]["score"]) == ("measured", 8.0)
-    assert items["test-reach:api"]["score"] == 5.0
-    assert "line-coverage:web" not in items
+    per = items["test-reach:components"]
+    assert per["data"]["components"]["api"]["share"] == 0.5
+    assert per["details"] == ["nothing to note: api, web"]
+    assert "test-reach:api" not in items
+
+
+async def test_unavailable_test_reach_is_said_once(ctx):
+    from sqlalchemy import delete
+
+    from repowise.core.persistence.models import HealthFileMetric
+
+    await ctx.session.execute(delete(HealthFileMetric))
+    items = await _section("test-reach", ctx)
+    assert items["test-reach"]["basis"] == "unresolved"
+    assert "line-coverage" not in items
+    assert items["test-reach:api"]["basis"] == "unresolved"  # never dropped
 
 
 async def test_contracts_unavailable_outside_a_workspace_then_measured(ctx, monkeypatch):
@@ -212,6 +231,9 @@ async def test_contracts_unavailable_outside_a_workspace_then_measured(ctx, monk
 
     items = await _section("contracts", ctx)
     assert items["contracts"]["basis"] == "unresolved"
+    monkeypatch.setattr(snapshot, "provided_contracts", lambda *_a: {})
+    none = (await _section("contracts", ctx))["contracts"]
+    assert "zero may mean none were detected" in none["reason"]
     monkeypatch.setattr(
         snapshot, "provided_contracts", lambda *_a: {"api/a.py": {"http::GET::/x": 2}}
     )
@@ -226,20 +248,42 @@ async def test_decisions_per_component_with_stale(ctx, monkeypatch):
     async def governing(*_a):
         return {"api/a.py": [("d1", "Use JWT")], "api/b.py": [("d2", "One DB")]}, {"d2"}
 
+    from repowise.core.persistence.models import DecisionRecord
+
     monkeypatch.setattr(snapshot, "governing_decisions", governing)
+    empty = await _section("decisions", ctx)
+    assert list(empty) == ["decisions"] and empty["decisions"]["basis"] == "unresolved"
+    ctx.session.add(DecisionRecord(repository_id=ctx.repository_id, title="Use JWT"))
+    await ctx.session.flush()
     items = await _section("decisions", ctx)
-    assert items["decisions"]["data"] == {"governing": 2, "stale": ["d2"]}
+    assert items["decisions"]["data"] == {"governing": 2, "recorded": 1, "stale": ["d2"]}
     assert items["decisions:api"]["details"] == ["d1: Use JWT", "d2 (stale): One DB"]
+    assert "decisions:web" not in items
+    assert items["decisions:components"]["data"]["components"]["web"] == {
+        "governing": [],
+        "stale": [],
+    }
 
 
 async def test_provenance_names_agents_without_counting_them(ctx):
     items = await _section("provenance", ctx)
     cov = items["provenance:coverage"]
     assert cov["data"]["known"] == 3 and cov["data"]["commits"] == 4
+    assert (cov["basis"], cov["score"]) == ("measured", None)  # coverage is not a grade
     assert items["provenance:agents"]["details"] == ["claude", "codex"]
     assert items["provenance:models"]["details"] == ["anthropic/claude-x"]
     text = json.dumps(items)
     assert "share" not in text and "human" not in text
+
+
+async def test_provenance_without_markers_is_unresolved(ctx):
+    from sqlalchemy import update
+
+    from repowise.core.persistence.models import GitCommit
+
+    await ctx.session.execute(update(GitCommit).values(attribution="unknown", agent_name=None))
+    cov = (await _section("provenance", ctx))["provenance:coverage"]
+    assert (cov["basis"], cov["score"]) == ("unresolved", -1)
 
 
 async def test_provenance_shows_nothing_when_attribution_is_off(ctx):
@@ -269,7 +313,20 @@ async def test_trend_needs_a_same_stamp_snapshot_a_quarter_older(ctx):
     await run(120, "s1", ["a.py"])
     items = await _section("trend", ctx)
     assert items["trend"]["basis"] == "measured"
+    # new_hotspot is off by default in the events config, so it does not count here.
+    assert "trend:new_hotspot" not in items
+    (ctx.repo_root / ".repowise" / "config.yaml").write_text(
+        "events:\n  kinds: {new_hotspot: true}\n", encoding="utf-8"
+    )
+    items = await _section("trend", ctx)
     assert items["trend:new_hotspot"]["details"] == ["api: b.py"]
+
+
+def test_long_detail_lists_are_capped():
+    from repowise.core.report.model import capped
+
+    assert capped([str(i) for i in range(25)], 20)[-1] == "and 5 more"
+    assert capped(["a"], 20) == ["a"]
 
 
 # ---------------------------------------------------------------------------
@@ -309,8 +366,55 @@ async def test_a_failing_section_is_inconclusive_not_fatal(ctx):
     async def boom(_ctx):
         raise RuntimeError("nope")
 
-    _entry, sections = await collect_repo(ctx, [("broken", Section("Broken", "b", boom))])
-    assert sections[0]["checks"][0]["score"] == -1
+    async def leak(ctx_):
+        raise OSError(f"cannot open {ctx_.repo_root / 'x.yaml'}")
+
+    _entry, sections = await collect_repo(
+        ctx, [("broken", Section("Broken", "b", boom)), ("leak", Section("Leak", "l", leak))]
+    )
+    assert sections[0]["checks"][0]["score"] == -1 and sections[0]["failed"] is True
+    assert sections[0]["checks"][0]["details"] == ["nope"]
+    assert sections[1]["checks"][0]["details"] == ["cannot open x.yaml"]
+
+
+def test_scrub_removes_local_paths_and_keeps_contract_ids(tmp_path):
+    from repowise.core.report.build import scrub
+
+    root = tmp_path / "shop"
+    out = scrub(
+        {
+            "a": f"cannot read: {root}/.repowise/components.yaml",
+            "b": ["at /home/someone/x.py", r"in C:\Users\me\y.py", "http::GET::/users/{id}"],
+            "c": str(root),
+        },
+        root,
+    )
+    assert out == {
+        "a": "cannot read: .repowise/components.yaml",
+        "b": ["at <path>", "in <path>", "http::GET::/users/{id}"],
+        "c": ".",
+    }
+
+
+async def test_a_catalog_read_error_does_not_leak_the_repo_path(ctx, monkeypatch):
+    from repowise.core.report.build import collect_repo
+
+    catalog = ctx.repo_root / ".repowise" / "components.yaml"
+    catalog.write_text("kind: Component\n", encoding="utf-8")
+    real = Path.read_text
+
+    def unreadable(self, *a, **k):  # the OSError quotes the absolute path, as a real one does
+        if self == catalog:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "read_text", unreadable)
+    _entry, sections = await collect_repo(ctx, [("components", report_sections.get("components"))])
+    details = [d for s in sections for c in s["checks"] for d in c["details"]]
+    assert any("cannot read" in d for d in details)
+    for d in details:
+        assert str(ctx.repo_root) not in d and ctx.repo_root.as_posix() not in d
+        assert ":\\" not in d
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +450,18 @@ def test_markdown_is_stable_and_escapes_table_cells():
     assert r"| `a\|b` | 7.3 | measured | <b>bold</b> |" in text
     assert "| `c` | ? | unresolved | none |" in text
     assert "  - one" in text
+
+
+def test_markdown_keeps_one_line_and_closes_code_spans():
+    from repowise.core.report.render import render_markdown
+
+    doc = _doc()
+    item = doc["sections"][0]["checks"][1]
+    item["name"], item["details"] = "c`d", ["two\nlines `x`"]
+    doc["sections"][0]["summary"] = "multi\nline"
+    text = render_markdown(doc)
+    assert "  - two lines \\`x\\`" in text
+    assert "- `c'd`" in text and "\nmulti line\n" in text
 
 
 def test_html_is_self_contained_and_escaped():
@@ -435,3 +551,21 @@ def test_cli_workspace_scope_covers_every_repo(tmp_path: Path, monkeypatch) -> N
         ("docs", False),
     ]
     assert [s["repo"] for s in doc["sections"]] == ["shop"]
+
+
+def test_cli_warns_when_a_section_failed(indexed: Path) -> None:
+    import repowise.core.report.sections  # noqa: F401
+    from repowise.cli.main import cli
+
+    async def boom(_ctx):
+        raise RuntimeError("nope")
+
+    report_sections.register("zz-broken", Section("Broken", "b", boom, 999))
+    try:
+        result = CliRunner().invoke(
+            cli, ["report", "assessment", str(indexed), "--sections", "zz-broken"]
+        )
+    finally:
+        report_sections._impls.pop("zz-broken", None)
+    assert result.exit_code == 0, result.output
+    assert "1 section(s) failed" in result.output and "zz-broken" in result.output
