@@ -9,8 +9,18 @@ import { parseCommitsView } from "@/lib/changes";
 
 describe("/repos/[id]/changes", () => {
   it("redirects to the Commits page grouped by change", async () => {
-    await ChangesPage({ params: Promise.resolve({ id: "r1" }) });
-    expect(redirect).toHaveBeenCalledWith("/repos/r1/commits?view=changes");
+    await ChangesPage({ params: Promise.resolve({ id: "r1" }), searchParams: Promise.resolve({}) });
+    expect(redirect).toHaveBeenLastCalledWith("/repos/r1/commits?view=changes");
+  });
+
+  it("keeps an old link's category, page and attention filter", async () => {
+    await ChangesPage({
+      params: Promise.resolve({ id: "r1" }),
+      searchParams: Promise.resolve({ category: "fix", offset: "50", needs_attention: "true" }),
+    });
+    expect(redirect).toHaveBeenLastCalledWith(
+      "/repos/r1/commits?view=changes&category=fix&attention=1&offset=50",
+    );
   });
 
   it("is no longer a navigation entry", () => {
