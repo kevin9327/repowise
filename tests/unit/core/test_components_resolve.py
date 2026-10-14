@@ -57,15 +57,31 @@ def _names(roots):
     return {c.root: c.name for c in derive_from_modules((r, None) for r in roots)}
 
 
-def test_every_root_sharing_a_name_takes_its_nearest_distinguishing_parent():
-    assert _names(["a/core", "b/core"]) == {"a/core": "core-a", "b/core": "core-b"}
+def test_the_shallowest_root_keeps_a_name_and_the_others_take_a_parent():
+    assert _names(["a/core", "b/core"]) == {"a/core": "core", "b/core": "core-b"}
     # Layout directories (src, app, ...) do not qualify; the nearest real one does.
     assert _names(["packages/ui/src/workspace", "packages/web/src/app/workspace"]) == {
-        "packages/ui/src/workspace": "workspace-ui",
+        "packages/ui/src/workspace": "workspace",
         "packages/web/src/app/workspace": "workspace-web",
     }
-    # Still tied after one parent: both go one parent further out.
-    assert _names(["a/x/core", "b/x/core"]) == {"a/x/core": "core-a", "b/x/core": "core-b"}
+    # Losers still tied after one parent both go one parent further out.
+    assert _names(["core", "a/x/core", "b/x/core"]) == {
+        "core": "core",
+        "a/x/core": "core-a",
+        "b/x/core": "core-b",
+    }
+
+
+def test_a_declared_component_without_paths_still_annotates_the_derived_one():
+    derived = derive_from_modules([("packages/ui", None), ("packages/cli/ui", None)])
+    files = ["packages/ui/button.ts", "packages/cli/ui/menu.py"]
+    resolved = resolve_components(
+        [Component(name="ui", owner="design", criticality="high")], derived, files
+    )
+    ui = resolved.get("ui")
+    assert (ui.root, ui.owner) == ("packages/ui", "design")
+    assert resolved.files["ui"] == ["packages/ui/button.ts"]
+    assert resolved.files["ui-cli"] == ["packages/cli/ui/menu.py"]
 
 
 def test_route_parameter_and_group_segments_never_name_a_component():
@@ -96,17 +112,16 @@ def test_template_directories_are_not_route_segments():
 
 def test_a_route_under_a_parameter_is_qualified_past_it():
     assert _names(["web/components/settings", "web/app/repos/[id]/settings"]) == {
-        "web/components/settings": "settings-components",
+        "web/components/settings": "settings",
         "web/app/repos/[id]/settings": "settings-repos",
     }
 
 
 def test_no_component_is_dropped_when_every_readable_name_is_taken():
-    # a-b/c and a_b/c slug alike at every level: only the hash tells them apart.
-    assert _names(["a-b/c", "a/b-c", "a/b/c", "a_b/c"]) == {
+    # a-b/c and a_b/c lose "c" and slug alike at every level: only the hash tells them apart.
+    assert _names(["c", "a-b/c", "a_b/c"]) == {
+        "c": "c",
         "a-b/c": "c-1c7275",
-        "a/b-c": "b-c",
-        "a/b/c": "c-b",
         "a_b/c": "c-9eddec",
     }
     # A leaf that slugs to nothing goes straight to the whole path.
@@ -116,18 +131,15 @@ def test_no_component_is_dropped_when_every_readable_name_is_taken():
 def test_derived_names_depend_only_on_the_set_of_roots():
     import itertools
 
-    roots = ["a/core", "b/core", "web/app/repos/[id]", "lib/util", "d/util"]
+    roots = ["a/core", "b/x/core", "c/x/core", "web/app/repos/[id]", "lib/util", "d/util"]
     names = _names(roots)
+    assert names["b/x/core"] == "core-b" and names["c/x/core"] == "core-c"
     for order in itertools.permutations(roots):
         assert _names(order) == names
-    # A new same-name root renames only the roots that share its name.
-    grown = _names([*roots, "c/d/core"])
-    assert grown["c/d/core"] == "core-d"
+    # A deeper same-name root leaves every existing name alone.
+    grown = _names([*roots, "e/f/core"])
+    assert grown["e/f/core"] == "core-f"
     assert {r: grown[r] for r in roots} == names
-    grown = _names([*roots, "core"])
-    assert {r: grown[r] for r in roots if not r.endswith("/core")} == {
-        r: n for r, n in names.items() if not r.endswith("/core")
-    }
 
 
 def test_services_come_from_the_repo_s_own_system_graph_nodes():

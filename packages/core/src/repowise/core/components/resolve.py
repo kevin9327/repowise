@@ -97,18 +97,28 @@ def _derived(roots: Iterable[tuple[str, str | None]], source: str) -> list[Compo
 
 
 def _assign_names(roots: list[str]) -> dict[str, str]:
-    """A unique name per root that depends only on the set of roots.
+    """A unique name per root.
 
-    Every root starts at its first candidate. When two or more roots want the
-    same name, all of them move to their next candidate, so no root wins by
-    input order or depth, and a new root renames only the roots that share
-    a name with it. The last candidate (a hash of the root) is unique.
+    The bare name goes to the shallowest root that wants it (ties by path), so
+    a name a catalog may already use to annotate a derived component stays put.
+    The roots that lose it move through their other candidates together: when
+    two or more want the same name, all of them take their next one, so the
+    qualified names depend only on the set of roots, never on input order. The
+    last candidate (a hash of the root) is unique, so no root is dropped.
     """
     cands = {r: _names(r) for r in roots}
-    level = dict.fromkeys(roots, 0)
-    while True:
+    names: dict[str, str] = {}
+    for r in sorted(roots, key=lambda r: (r.count("/"), r)):
+        if cands[r][0].lower() not in {n.lower() for n in names.values()}:
+            names[r] = cands[r][0]
+    taken = {n.lower() for n in names.values()}
+    level = {r: min(1, len(cands[r]) - 1) for r in roots if r not in names}
+    while level:
+        for r in level:
+            while level[r] < len(cands[r]) - 1 and cands[r][level[r]].lower() in taken:
+                level[r] += 1
         wanting: dict[str, list[str]] = {}
-        for r in roots:
+        for r in level:
             wanting.setdefault(cands[r][level[r]].lower(), []).append(r)
         moved = False
         for group in wanting.values():
@@ -119,7 +129,9 @@ def _assign_names(roots: list[str]) -> dict[str, str]:
                     level[r] += 1
                     moved = True
         if not moved:  # no clash left (two equal 6-hex hashes are not worth a loop)
-            return {r: cands[r][level[r]] for r in roots}
+            break
+    names.update({r: cands[r][i] for r, i in level.items()})
+    return names
 
 
 #: A framework route segment that names a parameter or a group, not a place:
