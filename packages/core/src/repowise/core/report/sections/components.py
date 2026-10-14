@@ -19,14 +19,96 @@ _OWNERSHIP_METHOD = (
 )
 
 
+def _map_item(found: Any, comps: list, directory_issues: list[str]) -> dict[str, Any]:
+    """The component map: how many components, where they came from, catalog problems."""
+    declared = sum(1 for c, _ in comps if c.declared)
+    catalog = found.catalog
+    return check(
+        "component-map",
+        score=None,
+        reason=(
+            f"{len(comps)} component(s): {declared} declared, {len(comps) - declared} "
+            f"derived; {len(found.resolved.unassigned)} file(s) belong to none"
+        ),
+        details=[
+            *(f"catalog file: {s}" for s in catalog.sources),
+            *(f"catalog {i.severity}: {i.message}" for i in catalog.issues),
+            *(f"team directory: {issue}" for issue in directory_issues),
+        ],
+        method=(
+            "components declared in .repowise/components.yaml or catalog-info.yaml, "
+            "else derived from workspace services, module pages or top-level directories"
+        ),
+        basis="declared" if catalog.sources else "inferred",
+        data={
+            "declared": declared,
+            "derived": len(comps) - declared,
+            "unassigned_files": len(found.resolved.unassigned),
+        },
+    )
+
+
+def _gated_item(rollups: dict) -> dict[str, Any] | None:
+    gated = ((rollups.get(None) or {}).get("health") or {}).get("gated_files")
+    if not gated:
+        return None
+    return check(
+        "health:gated",
+        reason=f"{gated} file(s) in languages health is held back on carry no score here",
+        method="the language gates every health surface applies",
+        basis="gated",
+        data={"gated_files": gated},
+    )
+
+
+def _posture(health: dict[str, Any]) -> tuple[str, float | None, str]:
+    """``(basis, score, posture text)`` of one component's health rollup."""
+    if health.get("basis") == "measured":
+        posture = f"health {health['average']} over {health['scored_files']} scored file(s)"
+        return "measured", health["average"], posture
+    basis = "gated" if health.get("gated_files") else "unresolved"
+    return basis, None, health.get("reason", "no health score")
+
+
+def _outcome(findings: list, basis: str) -> str:
+    if findings:
+        return "ownership findings"
+    return {"gated": "health gated", "unresolved": "no health score"}.get(basis, "nothing to note")
+
+
+def _component_item(
+    comp: Any, paths: list[str], figures: dict[str, Any], posture: tuple
+) -> dict[str, Any]:
+    basis, score, text = posture
+    findings = figures["ownership"].get("findings", [])
+    group = figures["owning_team"]
+    source = f"declared in {comp.declared_in}" if comp.declared else f"derived ({comp.source})"
+    details = [
+        source,
+        *([f"criticality: {comp.criticality}"] if comp.criticality else []),
+        *([f"tags: {', '.join(comp.tags)}"] if comp.tags else []),
+        *([f"owning team: {group}"] if group else []),
+        *(f"{f['kind']}: {f['message']}" for f in findings),
+    ]
+    method = figures["health"].get("method", "file health scores")
+    return check(
+        f"component:{comp.name}",
+        score=score,
+        reason=f"{len(paths)} file(s); {text}; {len(findings)} ownership finding(s)",
+        details=details,
+        method=f"{method}; ownership: {_OWNERSHIP_METHOD}",
+        basis=basis,
+        data=figures,
+    )
+
+
 async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
     from repowise.core.components.catalog import owner_group_name
     from repowise.core.components.store import component_ownership
 
     found = await ctx.components()
     rollups = await ctx.rollups()
-    files = found.resolved.files
-    comps = [(c, files[c.name]) for c in found.resolved.components]
+    comps = [(c, found.resolved.files[c.name]) for c in found.resolved.components]
     blocks, directory_issues = await component_ownership(
         ctx.session,
         ctx.repository_id,
@@ -34,45 +116,11 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
         comps,
         {n: r["bus_factor"] for n, r in rollups.items() if n is not None},
     )
-
-    declared = sum(1 for c, _ in comps if c.declared)
-    catalog = found.catalog
-    out = [
-        check(
-            "component-map",
-            score=None,
-            reason=(
-                f"{len(comps)} component(s): {declared} declared, {len(comps) - declared} "
-                f"derived; {len(found.resolved.unassigned)} file(s) belong to none"
-            ),
-            details=[
-                *(f"catalog file: {s}" for s in catalog.sources),
-                *(f"catalog {i.severity}: {i.message}" for i in catalog.issues),
-                *(f"team directory: {issue}" for issue in directory_issues),
-            ],
-            method=(
-                "components declared in .repowise/components.yaml or catalog-info.yaml, "
-                "else derived from workspace services, module pages or top-level directories"
-            ),
-            basis="declared" if catalog.sources else "inferred",
-            data={
-                "declared": declared,
-                "derived": len(comps) - declared,
-                "unassigned_files": len(found.resolved.unassigned),
-            },
-        )
-    ]
-    gated = ((rollups.get(None) or {}).get("health") or {}).get("gated_files")
+    out = [_map_item(found, comps, directory_issues)]
+    gated = _gated_item(rollups)
     if gated:
-        out.append(
-            check(
-                "health:gated",
-                reason=f"{gated} file(s) in languages health is held back on carry no score here",
-                method="the language gates every health surface applies",
-                basis="gated",
-                data={"gated_files": gated},
-            )
-        )
+        out.append(gated)
+
     figures: dict[str, dict[str, Any]] = {}
     outcomes = dict.fromkeys(
         ("ownership findings", "health gated", "no health score", "nothing to note"), 0
@@ -81,56 +129,22 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for comp, paths in comps:
         health = rollups.get(comp.name, {}).get("health") or {"basis": "unavailable"}
-        ownership = blocks.get(comp.name, {})
-        findings = ownership.get("findings", [])
-        if health.get("basis") == "measured":
-            basis, score = "measured", health["average"]
-            posture = f"health {health['average']} over {health['scored_files']} scored file(s)"
-        else:
-            basis = "gated" if health.get("gated_files") else "unresolved"
-            score = None
-            posture = health.get("reason", "no health score")
-        group = owner_group_name(comp.owner)
         figures[comp.name] = {
             "source": comp.source,
             "criticality": comp.criticality,
             "tags": list(comp.tags),
-            "owning_team": group,
+            "owning_team": owner_group_name(comp.owner),
             "file_count": len(paths),
             "health": health,
-            "ownership": ownership,
+            "ownership": blocks.get(comp.name, {}),
         }
-        if findings:
-            outcomes["ownership findings"] += 1
-        elif basis == "gated":
-            outcomes["health gated"] += 1
-        elif basis == "unresolved":
-            outcomes["no health score"] += 1
-        else:
-            outcomes["nothing to note"] += 1
+        posture = _posture(health)
+        outcome = _outcome(figures[comp.name]["ownership"].get("findings", []), posture[0])
+        outcomes[outcome] += 1
+        if outcome == "nothing to note":
             quiet.append(comp.name)
-            continue
-        source = f"declared in {comp.declared_in}" if comp.declared else f"derived ({comp.source})"
-        details = [
-            source,
-            *([f"criticality: {comp.criticality}"] if comp.criticality else []),
-            *([f"tags: {', '.join(comp.tags)}"] if comp.tags else []),
-            *([f"owning team: {group}"] if group else []),
-            *(f"{f['kind']}: {f['message']}" for f in findings),
-        ]
-        items.append(
-            check(
-                f"component:{comp.name}",
-                score=score,
-                reason=f"{len(paths)} file(s); {posture}; {len(findings)} ownership finding(s)",
-                details=details,
-                method=(
-                    f"{health.get('method', 'file health scores')}; ownership: {_OWNERSHIP_METHOD}"
-                ),
-                basis=basis,
-                data=figures[comp.name],
-            )
-        )
+        else:
+            items.append(_component_item(comp, paths, figures[comp.name], posture))
     out.append(
         component_summary(
             "components",
@@ -141,8 +155,7 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
             data={"components": figures},
         )
     )
-    out.extend(items)
-    return out
+    return out + items
 
 
 report_sections.register(

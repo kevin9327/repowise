@@ -17,6 +17,16 @@ _METHOD = "fewest primary owners who together own over half the owned files"
 _LOW = 2
 
 
+def _details(bus: dict[str, Any], comp: Any) -> list[str]:
+    return [
+        f"{bus['owned_files']} of {bus['file_count']} file(s) have a known primary owner",
+        f"{bus['single_owner_files']} file(s) have a single owner",
+        *([f"criticality: {comp.criticality}"] if comp.criticality else []),
+        *([f"tags: {', '.join(comp.tags)}"] if comp.tags else []),
+        *([bus["note"]] if bus.get("note") else []),
+    ]
+
+
 async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
     found = await ctx.components()
     rollups = await ctx.rollups()
@@ -48,21 +58,11 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
         if comp is None or not (comp.criticality or comp.tags):
             low[label].append(name)
             continue
-        details = [
-            f"{bus['owned_files']} of {bus['file_count']} file(s) have a known primary owner",
-            f"{bus['single_owner_files']} file(s) have a single owner",
-        ]
-        if comp.criticality:
-            details.append(f"criticality: {comp.criticality}")
-        if comp.tags:
-            details.append(f"tags: {', '.join(comp.tags)}")
-        if bus.get("note"):
-            details.append(bus["note"])
         out.append(
             check(
                 f"bus-factor:{name}",
                 reason=f"bus factor {bus['value']}",
-                details=details,
+                details=_details(bus, comp),
                 method=bus["method"],
                 basis=bus["basis"],
                 data=bus,

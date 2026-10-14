@@ -22,8 +22,27 @@ _METHOD = (
 )
 
 
+def _tally(rows: Any) -> tuple[int, int, set[str], set[str]]:
+    """``(commits, known, agents, models)`` from ``(attribution, agent, model, n)`` rows."""
+    from repowise.core.attribution import AGENT, UNKNOWN, commit_label
+
+    total = known = 0
+    agents: set[str] = set()
+    models: set[str] = set()
+    for attribution, agent, model, n in rows:
+        label = commit_label(attribution, agent)
+        total += n
+        if label != UNKNOWN:
+            known += n
+        if label == AGENT:
+            agents.add(agent or "unnamed agent")
+            if model:
+                models.add(model)
+    return total, known, agents, models
+
+
 async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
-    from repowise.core.attribution import AGENT, UNKNOWN, attribution_enabled, commit_label
+    from repowise.core.attribution import attribution_enabled
     from repowise.core.events.snapshot import RECENT_DAYS
     from repowise.core.persistence.models import GitCommit
 
@@ -48,18 +67,7 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
         .where(repo, GitCommit.committed_at >= newest - timedelta(days=RECENT_DAYS))
         .group_by(GitCommit.attribution, GitCommit.agent_name, GitCommit.agent_model_id)
     )
-    total = known = 0
-    agents: set[str] = set()
-    models: set[str] = set()
-    for attribution, agent, model, n in rows.all():
-        label = commit_label(attribution, agent)
-        total += n
-        if label != UNKNOWN:
-            known += n
-        if label == AGENT:
-            agents.add(agent or "unnamed agent")
-            if model:
-                models.add(model)
+    total, known, agents, models = _tally(rows.all())
     as_of = newest.date().isoformat()
     return [
         check(

@@ -55,6 +55,53 @@ async def _build(repos: list[tuple[str | None, Path]], sections: list, scope: di
     return assemble(scope, parts)
 
 
+def _pick_sections(wanted: str | None) -> list:
+    """The registered sections, narrowed to *wanted* (comma-separated ids)."""
+    from repowise.core.report.build import available_sections
+
+    sections = available_sections()
+    if not wanted:
+        return sections
+    names = [n.strip() for n in wanted.split(",") if n.strip()]
+    known = dict(sections)
+    unknown = [n for n in names if n not in known]
+    if unknown:
+        raise click.BadParameter(
+            f"unknown section(s) {', '.join(unknown)}; available: {', '.join(known)}",
+            param_hint="--sections",
+        )
+    return [(n, s) for n, s in sections if n in names]
+
+
+def _scope(target: Any) -> tuple[list[tuple[str | None, Path]], dict]:
+    """``(repos, scope)`` for the resolved command target."""
+    repos = _targets(target)
+    if target.is_workspace and target.repo_filter is None:
+        return repos, {"kind": "workspace", "name": target.ws_root.name}
+    return repos, {"kind": "repo", "name": repos[0][1].name}
+
+
+def _emit(text: str, fmt: str, out_path: str | None, document: dict) -> None:
+    """Write or print the rendered report, then warn about any failed section."""
+    if out_path:
+        Path(out_path).write_text(text, encoding="utf-8", newline="\n")
+        err_console.print(f"Wrote {fmt} report to {out_path}")
+    else:
+        click.echo(text, nl=False)
+    failed = [
+        f"{s['id']} ({s['repo']})" if s.get("repo") else s["id"]
+        for s in document["sections"]
+        if s.get("failed")
+    ]
+    if failed:
+        from rich.markup import escape
+
+        err_console.print(
+            f"[yellow]warning[/yellow] {len(failed)} section(s) failed and are reported as "
+            f"inconclusive: {escape(', '.join(failed))}"
+        )
+
+
 @click.command("assessment")
 @click.argument("path", required=False, type=click.Path(exists=True, file_okay=False))
 @click.option("--sections", "wanted", default=None, help="Comma-separated section ids.")
@@ -80,28 +127,16 @@ def assessment_command(
 ) -> None:
     """Assessment pack: components, hotspots, bus factor, dead code, test reach,
     contracts, decisions, provenance and the quarter's moves, each with its basis."""
-    from repowise.core.report.build import available_sections
     from repowise.core.report.render import report_renderers
 
     if not out_path:
         silence_logs_for_machine_output_until_close()  # stdout carries only the report
-    sections = available_sections()
-    if wanted:
-        names = [n.strip() for n in wanted.split(",") if n.strip()]
-        known = dict(sections)
-        unknown = [n for n in names if n not in known]
-        if unknown:
-            raise click.BadParameter(
-                f"unknown section(s) {', '.join(unknown)}; available: {', '.join(known)}",
-                param_hint="--sections",
-            )
-        sections = [(n, s) for n, s in sections if n in names]
+    sections = _pick_sections(wanted)
     if fmt not in report_renderers.names:
         raise click.BadParameter(
             f"unknown format {fmt!r}; available: {', '.join(report_renderers.names)}",
             param_hint="--format",
         )
-
     target = resolve_command_target(
         path=path,
         workspace_flag=workspace_flag,
@@ -109,27 +144,6 @@ def assessment_command(
         repo_alias=repo_alias,
     )
     target.notice(err_console, command="report assessment")
-    repos = _targets(target)
-    if target.is_workspace and target.repo_filter is None:
-        scope = {"kind": "workspace", "name": target.ws_root.name}
-    else:
-        scope = {"kind": "repo", "name": repos[0][1].name}
+    repos, scope = _scope(target)
     document = run_async(_build(repos, sections, scope))
-    text = report_renderers.get(fmt)(document)
-    if out_path:
-        Path(out_path).write_text(text, encoding="utf-8", newline="\n")
-        err_console.print(f"Wrote {fmt} report to {out_path}")
-    else:
-        click.echo(text, nl=False)
-    failed = [
-        f"{s['id']} ({s['repo']})" if s.get("repo") else s["id"]
-        for s in document["sections"]
-        if s.get("failed")
-    ]
-    if failed:
-        from rich.markup import escape
-
-        err_console.print(
-            f"[yellow]warning[/yellow] {len(failed)} section(s) failed and are reported as "
-            f"inconclusive: {escape(', '.join(failed))}"
-        )
+    _emit(report_renderers.get(fmt)(document), fmt, out_path, document)
