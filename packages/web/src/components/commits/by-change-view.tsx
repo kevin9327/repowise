@@ -4,7 +4,7 @@ import { EmptyState } from "@repowise-dev/ui/shared/empty-state";
 import { OverviewSection } from "@repowise-dev/ui/overview";
 import { ChangesTable } from "@/components/changes/changes-table";
 import { listChanges } from "@/lib/api/changes";
-import { commitsViewHref } from "@/lib/changes";
+import { byChangeHref, type ByChangeQuery } from "@/lib/changes";
 
 const PAGE_SIZE = 50;
 const CATEGORIES = ["feature", "fix", "refactor", "docs", "test", "deps", "chore", "other"];
@@ -19,6 +19,66 @@ const CHIP =
   "rounded-full border px-2.5 py-0.5 text-xs transition-colors border-[var(--color-border-default)] hover:bg-[var(--color-bg-elevated)]";
 const ACTIVE = "bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] font-medium";
 
+type Href = (next: ByChangeQuery) => string;
+
+/** The Needs attention toggle and the category chips; each chip keeps the other filter. */
+function FilterChips({
+  href,
+  category,
+  attention,
+  labels,
+}: {
+  href: Href;
+  category: string | undefined;
+  attention: boolean;
+  labels: { needsAttention: string; category: string; allCategories: string };
+}) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <Link
+        href={href({ category, attention: !attention })}
+        aria-pressed={attention}
+        className={`${CHIP} ${attention ? ACTIVE : ""}`}
+      >
+        {labels.needsAttention}
+      </Link>
+      <span aria-hidden className="mx-1 h-4 w-px bg-[var(--color-border-default)]" />
+      <nav className="flex flex-wrap gap-2" aria-label={labels.category}>
+        <Link href={href({ attention })} className={`${CHIP} ${category ? "" : ACTIVE}`}>
+          {labels.allCategories}
+        </Link>
+        {CATEGORIES.map((c) => (
+          <Link
+            key={c}
+            href={href({ category: c, attention })}
+            className={`${CHIP} ${category === c ? ACTIVE : ""}`}
+          >
+            {c}
+          </Link>
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+interface PagerLink {
+  href: string;
+  label: string;
+}
+
+/** "Showing n of total" and the newer / older links. */
+function Pager({ showing, newer, older }: { showing: string; newer: PagerLink | null; older: PagerLink | null }) {
+  return (
+    <div className="mt-4 flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
+      <span>{showing}</span>
+      <span className="flex gap-3">
+        {newer && <Link href={newer.href}>{newer.label}</Link>}
+        {older && <Link href={older.href}>{older.label}</Link>}
+      </span>
+    </div>
+  );
+}
+
 /**
  * The Commits page grouped by merged change, with each change's kept
  * evidence checklist summarised. Server-rendered: filters and paging are
@@ -31,20 +91,16 @@ export async function ByChangeView({ repoId, params }: { repoId: string; params:
   const category = CATEGORIES.includes(params.category ?? "") ? params.category : undefined;
   const attention = params.attention === "1";
 
-  let page;
-  try {
-    page = await listChanges(repoId, {
-      limit: PAGE_SIZE,
-      offset,
-      category,
-      evidence: true,
-      needs_attention: attention || undefined,
-    });
-  } catch {
-    page = null;
-  }
+  const page = await listChanges(repoId, {
+    limit: PAGE_SIZE,
+    offset,
+    category,
+    evidence: true,
+    needs_attention: attention || undefined,
+  }).catch(() => null);
 
-  if (!page || (page.total === 0 && !category && !attention)) {
+  const isEmpty = !page || (page.total === 0 && !category && !attention);
+  if (isEmpty) {
     return (
       <EmptyState
         title={t("emptyTitle")}
@@ -54,40 +110,24 @@ export async function ByChangeView({ repoId, params }: { repoId: string; params:
     );
   }
 
-  const href = (next: { offset?: number; category?: string | undefined; attention?: boolean }) => {
-    const q = new URLSearchParams({ view: "changes" });
-    if (next.category) q.set("category", next.category);
-    if (next.attention) q.set("attention", "1");
-    if (next.offset) q.set("offset", String(next.offset));
-    return `${commitsViewHref(repoId, "commits")}?${q.toString()}`;
-  };
+  const href: Href = (next) => byChangeHref(repoId, next);
+  const pageLink = (to: number, label: string): PagerLink => ({
+    href: href({ category, attention, offset: to }),
+    label,
+  });
 
   return (
     <OverviewSection title={t("byChangeTitle")} description={t("byChangeDescription")}>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Link
-          href={href({ category, attention: !attention })}
-          aria-pressed={attention}
-          className={`${CHIP} ${attention ? ACTIVE : ""}`}
-        >
-          {t("needsAttention")}
-        </Link>
-        <span aria-hidden className="mx-1 h-4 w-px bg-[var(--color-border-default)]" />
-        <nav className="flex flex-wrap gap-2" aria-label={t("category")}>
-          <Link href={href({ attention })} className={`${CHIP} ${category ? "" : ACTIVE}`}>
-            {t("allCategories")}
-          </Link>
-          {CATEGORIES.map((c) => (
-            <Link
-              key={c}
-              href={href({ category: c, attention })}
-              className={`${CHIP} ${category === c ? ACTIVE : ""}`}
-            >
-              {c}
-            </Link>
-          ))}
-        </nav>
-      </div>
+      <FilterChips
+        href={href}
+        category={category}
+        attention={attention}
+        labels={{
+          needsAttention: t("needsAttention"),
+          category: t("category"),
+          allCategories: t("allCategories"),
+        }}
+      />
       {attention && (
         <p className="mb-3 text-xs text-[var(--color-text-tertiary)]">{t("attentionScope")}</p>
       )}
@@ -98,19 +138,11 @@ export async function ByChangeView({ repoId, params }: { repoId: string; params:
       ) : (
         <ChangesTable repoId={repoId} rows={page.items} showProvenance={page.attribution} />
       )}
-      <div className="mt-4 flex items-center justify-between text-xs text-[var(--color-text-secondary)]">
-        <span>{t("showing", { shown: page.items.length, total: page.total })}</span>
-        <span className="flex gap-3">
-          {offset > 0 && (
-            <Link href={href({ category, attention, offset: Math.max(0, offset - PAGE_SIZE) })}>
-              {t("newer")}
-            </Link>
-          )}
-          {offset + PAGE_SIZE < page.total && (
-            <Link href={href({ category, attention, offset: offset + PAGE_SIZE })}>{t("older")}</Link>
-          )}
-        </span>
-      </div>
+      <Pager
+        showing={t("showing", { shown: page.items.length, total: page.total })}
+        newer={offset > 0 ? pageLink(Math.max(0, offset - PAGE_SIZE), t("newer")) : null}
+        older={offset + PAGE_SIZE < page.total ? pageLink(offset + PAGE_SIZE, t("older")) : null}
+      />
     </OverviewSection>
   );
 }

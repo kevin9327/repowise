@@ -9,7 +9,8 @@ import { changeLabel } from "@/lib/changes";
 
 /**
  * The kept checklist in one cell: attention first, then unknown, quiet when
- * nothing is flagged. The list never builds a checklist; the change page does.
+ * every item checked out. A checklist with no items reads as unknown, never
+ * as clean. The list never builds a checklist; the change page does.
  */
 function EvidenceCell({ summary }: { summary: ChangeEvidenceSummary | null | undefined }) {
   const t = useTranslations("views.changes");
@@ -19,6 +20,9 @@ function EvidenceCell({ summary }: { summary: ChangeEvidenceSummary | null | und
         {t("evidenceNotBuilt")}
       </span>
     );
+  }
+  if (summary.ok + summary.attention + summary.unknown === 0) {
+    return <span className="text-xs text-[var(--color-text-tertiary)]">{t("unknown")}</span>;
   }
   if (summary.attention === 0 && summary.unknown === 0) {
     return <span className="text-xs text-[var(--color-text-tertiary)]">{t("evidenceClear")}</span>;

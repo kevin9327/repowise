@@ -22,3 +22,19 @@ export function commitsViewHref(repoId: string, view: CommitsView): string {
 export function parseCommitsView(raw: string | string[] | undefined): CommitsView {
   return raw === "changes" ? "changes" : "commits";
 }
+
+/** Filters and paging of the by-change view, as its query parameters keep them. */
+export interface ByChangeQuery {
+  category?: string | undefined;
+  attention?: boolean;
+  offset?: number;
+}
+
+/** The by-change view with these filters; empty filters stay out of the URL. */
+export function byChangeHref(repoId: string, next: ByChangeQuery = {}): string {
+  const q = new URLSearchParams({ view: "changes" });
+  if (next.category) q.set("category", next.category);
+  if (next.attention) q.set("attention", "1");
+  if (next.offset) q.set("offset", String(next.offset));
+  return `${commitsViewHref(repoId, "commits")}?${q.toString()}`;
+}

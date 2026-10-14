@@ -103,6 +103,26 @@ describe("ByChangeView", () => {
     );
   });
 
+  it("never reads a checklist with no items as clean", async () => {
+    const empty = { generated_at: "2026-10-14T00:00:00+00:00", ok: 0, attention: 0, unknown: 0 };
+    listChanges.mockResolvedValue(page([row("pr-1", { evidence_summary: empty })]));
+    await show();
+    expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Nothing flagged")).toBeNull();
+  });
+
+  it("pages within the combined attention and category filter", async () => {
+    listChanges.mockResolvedValue({ ...page([row("pr-1")]), total: 120, offset: 50 });
+    await show({ attention: "1", category: "fix", offset: "50" });
+    expect(listChanges.mock.calls[0]![1]).toMatchObject({ offset: 50, category: "fix", needs_attention: true });
+    expect(screen.getByRole("link", { name: "Newer" }).getAttribute("href")).toBe(
+      "/repos/r1/commits?view=changes&category=fix&attention=1",
+    );
+    expect(screen.getByRole("link", { name: "Older" }).getAttribute("href")).toBe(
+      "/repos/r1/commits?view=changes&category=fix&attention=1&offset=100",
+    );
+  });
+
   it("shows the empty state when no change is indexed", async () => {
     listChanges.mockResolvedValue(page([]));
     await show();
