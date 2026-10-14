@@ -161,11 +161,21 @@ async def test_components_section_scores_health_and_marks_gated_languages(ctx):
     summary = items["components"]
     # api has nothing to note, so it is named in the summary; its figures stay in data.
     assert "component:api" not in items
-    assert summary["details"] == ["nothing to note: api"]
+    assert summary["details"] == ["no declared owner: api"]
     assert summary["data"]["components"]["api"]["health"]["average"] == 7.5
     web = items["component:web"]  # gated evidence always keeps its own item
     assert (web["basis"], web["score"]) == ("gated", -1)
     assert items["health:gated"]["data"]["gated_files"] == 1
+
+
+async def test_unknown_owner_activity_is_unresolved_never_quiet(ctx):
+    (ctx.repo_root / ".github").mkdir()
+    (ctx.repo_root / ".github" / "CODEOWNERS").write_text("api/ @org/ghosts\n", encoding="utf-8")
+    items = await _section("components", ctx)
+    owners = items["ownership:api"]
+    assert (owners["basis"], owners["score"]) == ("unresolved", -1)
+    assert "owner activity unknown: 1" in items["components"]["reason"]
+    assert all("nothing to note" not in d for d in items["components"]["details"])
 
 
 async def test_hotspots_counted_per_component(ctx):
@@ -586,3 +596,22 @@ def test_cli_warns_when_a_section_failed(indexed: Path) -> None:
         report_sections._impls.pop("zz-broken", None)
     assert result.exit_code == 0, result.output
     assert "1 section(s) failed" in result.output and "zz-broken" in result.output
+
+
+def test_generated_at_is_whole_seconds():
+    from repowise.core.report.build import assemble
+
+    doc = assemble({"kind": "repo", "name": "x"}, [], generated_at=_NOW.replace(microsecond=123456))
+    assert doc["generated_at"] == "2026-10-01T00:00:00+00:00"
+
+
+async def test_component_hotspots_list_the_top_files_then_count_the_rest(ctx):
+    from sqlalchemy import update
+
+    from repowise.core.persistence.models import GitMetadata
+
+    await ctx.session.execute(update(GitMetadata).values(is_hotspot=True))
+    found = await ctx.rollups()
+    found["api"]["hotspots"]["top"] = found["api"]["hotspots"]["top"][:1]  # as if capped at 1
+    items = await _section("hotspots", ctx)
+    assert items["hotspots:api"]["details"][-1] == "and 1 more"

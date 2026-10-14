@@ -154,7 +154,7 @@ def assemble(
     return {
         "schema_version": SCHEMA_VERSION,
         "kind": "assessment",
-        "generated_at": (generated_at or datetime.now(UTC)).isoformat(),
+        "generated_at": (generated_at or datetime.now(UTC)).replace(microsecond=0).isoformat(),
         "generator": {"name": "repowise", "version": __version__, "stamp": current_stamp()},
         "scope": scope,
         "notice": NOTICE,

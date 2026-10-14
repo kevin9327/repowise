@@ -58,11 +58,13 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
         ),
     ]
     for name, h in hot:
+        rest = h["count"] - len(h["top"])
         out.append(
             check(
                 f"hotspots:{name}",
                 reason=f"{h['count']} hotspot file(s)",
-                details=h["top"],
+                # The rollup keeps the top files by hotspot score; the rest are counted.
+                details=[*h["top"], *([f"and {rest} more"] if rest > 0 else [])],
                 method=_METHOD,
                 basis="measured",
                 data=h,

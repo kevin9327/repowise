@@ -18,6 +18,16 @@ _OWNERSHIP_METHOD = (
     "commits in the 90 days before the newest one"
 )
 
+#: Summary buckets, most pressing first; a component is counted in one.
+_BUCKETS = (
+    "ownership findings",
+    "owner activity unknown",
+    "health gated",
+    "no health score",
+    "no declared owner",
+    "nothing to note",
+)
+
 
 def _map_item(found: Any, comps: list, directory_issues: list[str]) -> dict[str, Any]:
     """The component map: how many components, where they came from, catalog problems."""
@@ -70,10 +80,41 @@ def _posture(health: dict[str, Any]) -> tuple[str, float | None, str]:
     return basis, None, health.get("reason", "no health score")
 
 
-def _outcome(findings: list, basis: str) -> str:
-    if findings:
+def _unknown_owners(ownership: dict[str, Any]) -> int:
+    """How many declared owners of a component have activity nobody can check:
+    an identity history never shows, a bare handle, or no history at all."""
+    return (
+        sum(1 for t in ownership.get("declared_teams", []) if t.get("activity") == "unknown")
+        + ownership.get("declared_individuals", {}).get("unknown", 0)
+        + ownership.get("declared_unresolved", 0)
+    )
+
+
+def _outcome(ownership: dict[str, Any], basis: str) -> str:
+    """The one summary bucket a component is counted in, most pressing first."""
+    if ownership.get("findings"):
         return "ownership findings"
-    return {"gated": "health gated", "unresolved": "no health score"}.get(basis, "nothing to note")
+    if _unknown_owners(ownership):
+        return "owner activity unknown"
+    if basis in ("gated", "unresolved"):
+        return {"gated": "health gated", "unresolved": "no health score"}[basis]
+    if not ownership.get("files_with_declared_owner"):
+        return "no declared owner"
+    return "nothing to note"
+
+
+def _ownership_item(name: str, ownership: dict[str, Any]) -> dict[str, Any]:
+    unknown = _unknown_owners(ownership)
+    return check(
+        f"ownership:{name}",
+        reason=(
+            f"activity of {unknown} declared owner(s) is unknown: no indexed commit "
+            "matches them, so whether they still change this component cannot be checked"
+        ),
+        method=_OWNERSHIP_METHOD,
+        basis="unresolved",
+        data=ownership,
+    )
 
 
 def _component_item(
@@ -122,10 +163,9 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
         out.append(gated)
 
     figures: dict[str, dict[str, Any]] = {}
-    outcomes = dict.fromkeys(
-        ("ownership findings", "health gated", "no health score", "nothing to note"), 0
-    )
+    outcomes = dict.fromkeys(_BUCKETS, 0)
     quiet: list[str] = []
+    undeclared: list[str] = []
     items: list[dict[str, Any]] = []
     for comp, paths in comps:
         health = rollups.get(comp.name, {}).get("health") or {"basis": "unavailable"}
@@ -138,18 +178,24 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
             "health": health,
             "ownership": blocks.get(comp.name, {}),
         }
+        ownership = figures[comp.name]["ownership"]
         posture = _posture(health)
-        outcome = _outcome(figures[comp.name]["ownership"].get("findings", []), posture[0])
+        outcome = _outcome(ownership, posture[0])
         outcomes[outcome] += 1
         if outcome == "nothing to note":
             quiet.append(comp.name)
-        else:
+        elif outcome == "no declared owner":
+            undeclared.append(comp.name)
+        if ownership.get("findings") or posture[0] != "measured":
             items.append(_component_item(comp, paths, figures[comp.name], posture))
+        if _unknown_owners(ownership):
+            items.append(_ownership_item(comp.name, ownership))
     out.append(
         component_summary(
             "components",
             outcomes=outcomes,
             quiet=quiet,
+            named={"no declared owner": undeclared},
             method=f"file health scores per component; ownership: {_OWNERSHIP_METHOD}",
             basis="measured",
             data={"components": figures},
