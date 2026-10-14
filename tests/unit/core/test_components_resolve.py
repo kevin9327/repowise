@@ -53,50 +53,81 @@ def test_module_pages_assign_each_file_to_the_deepest_module():
     assert resolved.unassigned == ["README.md", "tools/gen.py"]
 
 
-def test_colliding_names_take_the_nearest_distinguishing_parent():
-    derived = derive_from_modules([("a/core", None), ("b/core", None)])
-    assert [c.name for c in derived] == ["core", "core-b"]
+def _names(roots):
+    return {c.root: c.name for c in derive_from_modules((r, None) for r in roots)}
 
+
+def test_every_root_sharing_a_name_takes_its_nearest_distinguishing_parent():
+    assert _names(["a/core", "b/core"]) == {"a/core": "core-a", "b/core": "core-b"}
     # Layout directories (src, app, ...) do not qualify; the nearest real one does.
-    derived = derive_from_modules(
-        [("packages/ui/src/workspace", None), ("packages/web/src/app/workspace", None)]
-    )
-    assert [c.name for c in derived] == ["workspace", "workspace-web"]
+    assert _names(["packages/ui/src/workspace", "packages/web/src/app/workspace"]) == {
+        "packages/ui/src/workspace": "workspace-ui",
+        "packages/web/src/app/workspace": "workspace-web",
+    }
+    # Still tied after one parent: both go one parent further out.
+    assert _names(["a/x/core", "b/x/core"]) == {"a/x/core": "core-a", "b/x/core": "core-b"}
 
 
 def test_route_parameter_and_group_segments_never_name_a_component():
-    derived = derive_from_modules(
+    assert _names(
         [
-            ("web/app/repos/[id]", None),
-            ("web/app/(marketing)", None),
-            ("web/app/docs/[...slug]", None),
-            ("web/app/shop/[[...filters]]", None),
-            ("api/users/{userId}", None),
+            "web/app/repos/[id]",
+            "web/app/(marketing)",
+            "web/app/docs/[...slug]",
+            "web/app/shop/[[...filters]]",
+            "api/users/{userId}",
+            "(marketing)",
         ]
-    )
-    assert {c.root: c.name for c in derived} == {
+    ) == {
         "web/app/repos/[id]": "repos",
         "web/app/(marketing)": "app",
         "web/app/docs/[...slug]": "docs",
         "web/app/shop/[[...filters]]": "shop",
         "api/users/{userId}": "users",
+        "(marketing)": "marketing",  # a group that is the whole root still names it
+    }
+
+
+def test_template_directories_are_not_route_segments():
+    assert _names(["tpl/{{cookiecutter.name}}"]) == {
+        "tpl/{{cookiecutter.name}}": "cookiecutter-name"
     }
 
 
 def test_a_route_under_a_parameter_is_qualified_past_it():
-    derived = derive_from_modules(
-        [("web/components/settings", None), ("web/app/repos/[id]/settings", None)]
-    )
-    assert [c.name for c in derived] == ["settings", "settings-repos"]
+    assert _names(["web/components/settings", "web/app/repos/[id]/settings"]) == {
+        "web/components/settings": "settings-components",
+        "web/app/repos/[id]/settings": "settings-repos",
+    }
 
 
-def test_derived_names_are_stable_across_input_order_and_unrelated_additions():
-    roots = [("a/core", None), ("b/core", None), ("web/app/repos/[id]", None)]
-    names = {c.root: c.name for c in derive_from_modules(roots)}
-    assert {c.root: c.name for c in derive_from_modules(reversed(roots))} == names
-    grown = {c.root: c.name for c in derive_from_modules([*roots, ("c/d/core", None)])}
-    assert {r: grown[r] for r in names} == names
+def test_no_component_is_dropped_when_every_readable_name_is_taken():
+    # a-b/c and a_b/c slug alike at every level: only the hash tells them apart.
+    assert _names(["a-b/c", "a/b-c", "a/b/c", "a_b/c"]) == {
+        "a-b/c": "c-1c7275",
+        "a/b-c": "b-c",
+        "a/b/c": "c-b",
+        "a_b/c": "c-9eddec",
+    }
+    # A leaf that slugs to nothing goes straight to the whole path.
+    assert _names(["x/__"]) == {"x/__": "x"}
+
+
+def test_derived_names_depend_only_on_the_set_of_roots():
+    import itertools
+
+    roots = ["a/core", "b/core", "web/app/repos/[id]", "lib/util", "d/util"]
+    names = _names(roots)
+    for order in itertools.permutations(roots):
+        assert _names(order) == names
+    # A new same-name root renames only the roots that share its name.
+    grown = _names([*roots, "c/d/core"])
     assert grown["c/d/core"] == "core-d"
+    assert {r: grown[r] for r in roots} == names
+    grown = _names([*roots, "core"])
+    assert {r: grown[r] for r in roots if not r.endswith("/core")} == {
+        r: n for r, n in names.items() if not r.endswith("/core")
+    }
 
 
 def test_services_come_from_the_repo_s_own_system_graph_nodes():
