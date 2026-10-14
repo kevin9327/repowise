@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ResponsiveTable, type ResponsiveColumn } from "@repowise-dev/ui/shared/responsive-table";
 import { formatDate } from "@repowise-dev/ui/lib/format";
 import type { ChangeSummary } from "@/lib/api/changes";
+import { changeLabel } from "@/lib/changes";
 
 export interface ChangesTableLabels {
   change: string;
@@ -13,11 +14,6 @@ export interface ChangesTableLabels {
   lines: string;
   title: string;
   provenance: string;
-}
-
-/** The change's short name: the forge ref when it has one, else a trimmed id. */
-export function changeLabel(c: Pick<ChangeSummary, "forge_ref" | "id">): string {
-  return c.forge_ref ?? (c.id.length > 19 ? c.id.slice(0, 19) : c.id);
 }
 
 export function ChangesTable({

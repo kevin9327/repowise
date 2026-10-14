@@ -9,7 +9,7 @@ import { OverviewSection } from "@repowise-dev/ui/overview";
 import { formatDate } from "@repowise-dev/ui/lib/format";
 import { Badge } from "@repowise-dev/ui/ui/badge";
 import type { EvidenceItem } from "@repowise-dev/types/changes";
-import { changeLabel } from "@/components/changes/changes-table";
+import { changeLabel } from "@/lib/changes";
 import { getChange } from "@/lib/api/changes";
 
 interface Props {
