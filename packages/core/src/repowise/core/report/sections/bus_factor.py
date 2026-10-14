@@ -13,18 +13,19 @@ from repowise.core.report.model import (
 )
 
 _METHOD = "fewest primary owners who together own over half the owned files"
-#: A component whose bus factor is above this is named in the summary only.
-_NOTED_UP_TO = 2
+#: A bus factor at or below this is counted and named in the summary row.
+_LOW = 2
 
 
 async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
     found = await ctx.components()
     rollups = await ctx.rollups()
-    criticality = {c.name: c.criticality for c in found.resolved.components}
+    declared = {c.name: c for c in found.resolved.components}
     out: list[dict[str, Any]] = []
     figures: dict[str, dict[str, Any]] = {}
     outcomes = {"bus factor 1": 0, "bus factor 2": 0, "3 or more": 0, "unresolved": 0}
     quiet: list[str] = []
+    low: dict[str, list[str]] = {"bus factor 1": [], "bus factor 2": []}
     for name, rolled in sorted((n, r) for n, r in rollups.items() if n is not None):
         bus = figures[name] = rolled["bus_factor"]
         if bus["basis"] == "unavailable":
@@ -35,17 +36,26 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
                 )
             )
             continue
-        if bus["value"] > _NOTED_UP_TO:
+        if bus["value"] > _LOW:
             outcomes["3 or more"] += 1
             quiet.append(name)
             continue
-        outcomes[f"bus factor {bus['value']}"] += 1
+        label = f"bus factor {bus['value']}"
+        outcomes[label] += 1
+        comp = declared.get(name)
+        # Only a component the catalog marks (criticality or tags) gets its own
+        # item; every other low one is counted and named in the summary row.
+        if comp is None or not (comp.criticality or comp.tags):
+            low[label].append(name)
+            continue
         details = [
             f"{bus['owned_files']} of {bus['file_count']} file(s) have a known primary owner",
             f"{bus['single_owner_files']} file(s) have a single owner",
         ]
-        if criticality.get(name):
-            details.append(f"criticality: {criticality[name]}")
+        if comp.criticality:
+            details.append(f"criticality: {comp.criticality}")
+        if comp.tags:
+            details.append(f"tags: {', '.join(comp.tags)}")
         if bus.get("note"):
             details.append(bus["note"])
         out.append(
@@ -64,6 +74,7 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
             "bus-factor",
             outcomes=outcomes,
             quiet=quiet,
+            named=low,
             method=_METHOD,
             basis="measured",
             data={"components": figures},

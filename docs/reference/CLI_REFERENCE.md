@@ -1646,7 +1646,7 @@ repowise report assessment [PATH] [--sections a,b] [--format json|markdown|html]
 |---|---|---|
 | `components` | Each component's NLOC-weighted health, catalog facts and `components ownership` findings | `measured`; `gated` on a language health is held back on |
 | `hotspots` | Files with high recent churn, per component | `measured` |
-| `bus-factor` | Fewest primary owners holding over half of each component's owned files | `measured`; `inferred` under five owned files |
+| `bus-factor` | Fewest primary owners holding over half of each component's owned files; components at 1 or 2 are counted and named in the summary unless the catalog marks them | `measured`; `inferred` under five owned files |
 | `dead-code` | Open findings by confidence tier; `safe_to_delete` is not used | `inferred`; `gated` for held-back languages |
 | `test-reach` | Line coverage from ingested reports, and production files a test reaches, as separate items | `measured` and `inferred` |
 | `contracts` | Contracts each component provides and their consumers in other repos | `measured` when the workspace store matches the indexed commit |
@@ -1654,7 +1654,7 @@ repowise report assessment [PATH] [--sections a,b] [--format json|markdown|html]
 | `provenance` | Commits in the last 90 indexed days with a known source (a count, not a score), and the agents and models named (listed, not counted) | `measured`, `declared`; `unresolved` with no markers |
 | `trend` | What moved since a same-stamp snapshot at least 90 days older, by the `events` diff rules and only for the event kinds the repository has on | `measured` |
 
-Basis `unresolved` means the evidence is missing. Each per-component section opens with one summary row counting components by outcome; a component gets its own item only when there is something to note (an ownership finding, a bus factor of 2 or less, hotspots, a stale decision, provided contracts, or unresolved or gated evidence), the rest are named in the summary, and the JSON `data` keeps every component's figures. Local paths are removed from every item. A section is a `Section` on `SeamRegistry("report-section")`: each module in `repowise/core/report/sections/` registers one, a plugin registers its own the same way, and a section whose data is absent returns `None` and is left out (an outcomes section is added this way once change outcomes exist). Renderers live on `SeamRegistry("report-renderer")` and are picked with `--format`. Modernization candidates are not reported, since no existing signal measures them.
+Basis `unresolved` means the evidence is missing. Each per-component section opens with one summary row counting components by outcome; a component gets its own item only when there is something to note (an ownership finding, a bus factor of 2 or less on a component the catalog gives a criticality or tags, hotspots, a stale decision, provided contracts, or unresolved or gated evidence), the rest are named in the summary, and the JSON `data` keeps every component's figures. Local paths are removed from every item. A section is a `Section` on `SeamRegistry("report-section")`: each module in `repowise/core/report/sections/` registers one, a plugin registers its own the same way, and a section whose data is absent returns `None` and is left out (an outcomes section is added this way once change outcomes exist). Renderers live on `SeamRegistry("report-renderer")` and are picked with `--format`. Modernization candidates are not reported, since no existing signal measures them.
 
 ---
 

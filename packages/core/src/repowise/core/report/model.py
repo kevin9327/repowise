@@ -74,6 +74,15 @@ def capped(lines: list[str], limit: int = MAX_DETAILS) -> list[str]:
     return [*lines[:limit], f"and {len(lines) - limit} more"]
 
 
+#: Component names one summary line lists before it says how many more there are.
+MAX_NAMES = 30
+
+
+def _names(names: list[str]) -> str:
+    shown = ", ".join(names[:MAX_NAMES])
+    return shown + (f" and {len(names) - MAX_NAMES} more" if len(names) > MAX_NAMES else "")
+
+
 def component_summary(
     name: str,
     *,
@@ -82,18 +91,23 @@ def component_summary(
     method: str,
     basis: str,
     data: dict[str, Any],
+    named: dict[str, list[str]] | None = None,
 ) -> dict[str, Any]:
     """The one summary row a per-component section opens with.
 
     Components get an item of their own only when there is something to say;
-    the rest are named here (*quiet*), and *data* keeps every component's
-    figures, so the JSON loses nothing the shorter text leaves out.
+    the rest are named here, under a label in *named* or as *quiet*, and *data*
+    keeps every component's figures, so the JSON loses nothing the shorter
+    text leaves out.
     """
     counted = ", ".join(f"{label}: {n}" for label, n in outcomes.items() if n)
+    details = [f"{label}: {_names(names)}" for label, names in (named or {}).items() if names]
+    if quiet:
+        details.append(f"nothing to note: {_names(quiet)}")
     return check(
         name,
         reason=f"{sum(outcomes.values())} component(s); {counted or 'none'}",
-        details=[f"nothing to note: {', '.join(quiet)}"] if quiet else [],
+        details=details,
         method=method,
         basis=basis,
         data=data,

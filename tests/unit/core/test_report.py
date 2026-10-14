@@ -177,12 +177,29 @@ async def test_hotspots_counted_per_component(ctx):
 
 async def test_bus_factor_is_per_component_and_names_nobody(ctx):
     items = await _section("bus-factor", ctx)
-    assert set(items) == {"bus-factor", "bus-factor:api", "bus-factor:web"}
-    assert items["bus-factor"]["reason"] == "2 component(s); bus factor 1: 1, bus factor 2: 1"
-    assert items["bus-factor:api"]["reason"] == "bus factor 2"
-    assert items["bus-factor:api"]["basis"] == "inferred"  # under five owned files
+    # No catalog marks either component, so both are counted and named in the summary.
+    assert set(items) == {"bus-factor"}
+    summary = items["bus-factor"]
+    assert summary["reason"] == "2 component(s); bus factor 1: 1, bus factor 2: 1"
+    assert summary["details"] == ["bus factor 1: web", "bus factor 2: api"]
+    api = summary["data"]["components"]["api"]
+    assert (api["value"], api["basis"]) == (2, "inferred")  # under five owned files
     text = json.dumps(items)
     assert "Alice" not in text and "Bob" not in text and "example.com" not in text
+
+
+async def test_bus_factor_item_for_a_component_the_catalog_marks(ctx):
+    (ctx.repo_root / ".repowise" / "components.yaml").write_text(
+        "apiVersion: backstage.io/v1alpha1\nkind: Component\nmetadata:\n  name: api\n"
+        "  annotations:\n    repowise.dev/paths: api/**\n    repowise.dev/criticality: critical\n"
+        "spec: {type: service, lifecycle: production, owner: group:default/core}\n",
+        encoding="utf-8",
+    )
+    fresh = ReportContext(ctx.session, ctx.repository_id, ctx.repo_root)
+    items = await _section("bus-factor", fresh)
+    assert set(items) == {"bus-factor", "bus-factor:api"}
+    assert "criticality: critical" in items["bus-factor:api"]["details"]
+    assert items["bus-factor"]["details"] == ["bus factor 1: web"]
 
 
 async def test_dead_code_tiers_and_gated_findings(ctx):
