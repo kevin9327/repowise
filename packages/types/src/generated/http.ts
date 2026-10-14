@@ -2639,6 +2639,12 @@ export interface PackageUsageDeclaration {
   dev?: boolean;
 }
 
+/** One module the file imports and how it was matched to the package. */
+export interface PackageUsageModule {
+  name: string;
+  mapping: "declared" | "inferred";
+}
+
 export interface PackageUsageReachability {
   state: string;
   basis: string;
@@ -2659,7 +2665,7 @@ export interface PackageUsageResponse {
 /** One file importing the package. */
 export interface PackageUsageSite {
   path: string;
-  modules: string[];
+  modules: PackageUsageModule[];
   symbols: string[];
   mapping: "declared" | "inferred";
   line?: number | null;
