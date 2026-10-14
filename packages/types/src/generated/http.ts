@@ -456,6 +456,7 @@ export interface ChangeListResponse {
   limit: number;
   offset: number;
   attribution: boolean;
+  checklists_built?: ChecklistsBuilt | null;
 }
 
 /** Three-state AI provenance over the change's commits, with its coverage. */
@@ -670,6 +671,12 @@ export interface ChatTurnUsage {
   input_tokens?: number | null;
   output_tokens?: number | null;
   model_calls?: number;
+}
+
+/** How many of the changes a list's filters match keep an evidence checklist. */
+export interface ChecklistsBuilt {
+  built: number;
+  changes: number;
 }
 
 /**

@@ -171,3 +171,40 @@ def test_export_windows_and_formats(tmp_path, monkeypatch):
     assert lines[0] == "change_id,merged_at,title,kind,label,status,basis,value,source"
     assert lines[1].startswith("pr-5,2026-03-01") and ",owners,Declared owners,attention,declared," in lines[1]
     assert len(lines) == 3
+
+
+async def _keep_checklist(repo_path: Path, status: str) -> None:
+    from repowise.core.changes.collect import save_evidence
+    from repowise.core.changes.evidence import ChangeEvidence, EvidenceItem
+    from repowise.core.persistence import create_engine, create_session_factory, get_session
+    from repowise.core.persistence.crud import get_repository_by_path
+
+    engine = create_engine(f"sqlite+aiosqlite:///{(repo_path / '.repowise' / 'wiki.db').as_posix()}")
+    try:
+        async with get_session(create_session_factory(engine)) as session:
+            repo = await get_repository_by_path(session, str(repo_path))
+            evidence = ChangeEvidence(
+                change_id="pr-5",
+                revspec=HEAD,
+                generated_at="2026-10-14T00:00:00+00:00",
+                items=[EvidenceItem("owners", "Declared owners", status, "declared", None, [], "test")],
+            )
+            await save_evidence(session, repo.id, "pr-5", evidence)
+    finally:
+        await engine.dispose()
+
+
+def test_list_needs_attention_reads_kept_checklists_only(tmp_path):
+    root = _repo(tmp_path)
+    runner = CliRunner()
+    args = ["list", "--path", str(root), "--format", "json", "--needs-attention"]
+
+    # No checklist kept yet: nothing is listed, and nothing is built.
+    assert json.loads(runner.invoke(changes_group, args).output)["total"] == 0
+    run_async(_keep_checklist(root, "ok"))
+    assert json.loads(runner.invoke(changes_group, args).output)["total"] == 0
+    run_async(_keep_checklist(root, "attention"))
+    flagged = json.loads(runner.invoke(changes_group, args).output)
+    assert flagged["total"] == 1 and flagged["changes"][0]["id"] == "pr-5"
+    features = json.loads(runner.invoke(changes_group, [*args, "--category", "feature"]).output)
+    assert features["total"] == 0

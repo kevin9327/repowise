@@ -13,6 +13,7 @@ from repowise.core.changes.collect import (
     build_stored_evidence,
     cached_evidence,
     evidence_summary,
+    list_needing_attention,
     save_evidence,
 )
 from repowise.core.changes.evidence import ChangeEvidence
@@ -24,6 +25,7 @@ from repowise.server.schemas.changes import (
     ChangeEvidenceSummary,
     ChangeListResponse,
     ChangeRecord,
+    ChecklistsBuilt,
     summary_from_record,
 )
 
@@ -70,14 +72,8 @@ async def list_changes(
     attribution = await _attribution(session, repo_id)
     where = crud.ChangeFilter(category=category, shape=shape, q=q)
     if needs_attention:
-        # Checklists are built on first view, so the prefiltered set stays
-        # small; confirm on the parsed evidence, then page here. Ceiling: if
-        # checklists are ever built in bulk, move this filter into SQL.
-        candidates = await crud.list_attention_candidates(session, repo_id, where)
-        ids = [r.change_id for r in candidates if (evidence_summary(r) or {}).get("attention")]
-        total = len(ids)
-        rows, _ = await crud.list_changes(
-            session, repo_id, crud.ChangeFilter(change_ids=ids[offset : offset + limit]), limit=None
+        rows, total = await list_needing_attention(
+            session, repo_id, where, limit=limit, offset=offset
         )
     else:
         rows, total = await crud.list_changes(session, repo_id, where, limit=limit, offset=offset)
@@ -88,12 +84,17 @@ async def list_changes(
             summary = evidence_summary(r)
             item.evidence_summary = summary and ChangeEvidenceSummary(**summary)
         items.append(item)
+    checklists = None
+    if evidence:
+        built, changes = await crud.count_checklists_built(session, repo_id, where)
+        checklists = ChecklistsBuilt(built=built, changes=changes)
     return ChangeListResponse(
         items=items,
         total=total,
         limit=limit,
         offset=offset,
         attribution=attribution,
+        checklists_built=checklists,
     )
 
 

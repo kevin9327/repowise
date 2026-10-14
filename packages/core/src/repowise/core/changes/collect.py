@@ -19,7 +19,7 @@ import json
 import re
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -35,6 +35,9 @@ from repowise.core.ownership.codeowners import (
     parse_codeowners,
     read_codeowners,
 )
+
+if TYPE_CHECKING:
+    from repowise.core.persistence.crud import ChangeFilter
 
 logger = structlog.get_logger(__name__)
 
@@ -275,6 +278,33 @@ def evidence_summary(row: Any) -> dict[str, Any] | None:
         # A status this reader does not know is not a pass.
         counts[item.status if item.status in ("ok", "attention") else "unknown"] += 1
     return counts
+
+
+async def list_needing_attention(
+    session: Any,
+    repo_id: str,
+    where: ChangeFilter | None = None,
+    *,
+    limit: int | None,
+    offset: int = 0,
+) -> tuple[list[Any], int]:
+    """Changes matching *where* whose kept checklist flags attention, newest
+    merged first, and their total. Reads kept checklists only, never builds one.
+    """
+    from repowise.core.persistence.crud import (
+        ChangeFilter,
+        list_attention_candidates,
+        list_changes,
+    )
+
+    # Checklists are built on first view, so the prefiltered set stays small;
+    # confirm on the parsed evidence, then page here. Ceiling: if checklists
+    # are ever built in bulk, move this filter into SQL.
+    candidates = await list_attention_candidates(session, repo_id, where)
+    ids = [r.change_id for r in candidates if (evidence_summary(r) or {}).get("attention")]
+    page = ids[offset:] if limit is None else ids[offset : offset + limit]
+    rows, _ = await list_changes(session, repo_id, ChangeFilter(change_ids=page), limit=None)
+    return rows, len(ids)
 
 
 # -- inputs -------------------------------------------------------------------

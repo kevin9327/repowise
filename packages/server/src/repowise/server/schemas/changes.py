@@ -125,6 +125,13 @@ class ChangeListItem(ChangeSummary):
         return data
 
 
+class ChecklistsBuilt(BaseModel):
+    """How many of the changes a list's filters match keep an evidence checklist."""
+
+    built: int
+    changes: int
+
+
 class ChangeListResponse(BaseModel):
     items: list[ChangeListItem]
     total: int
@@ -132,6 +139,15 @@ class ChangeListResponse(BaseModel):
     offset: int
     #: False when ``attribution.enabled`` is off for the repository.
     attribution: bool
+    # Sent only with ``?evidence=true``; absent otherwise.
+    checklists_built: ChecklistsBuilt | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_count(self, handler):  # no return annotation: keeps the schema
+        data = handler(self)
+        if self.checklists_built is None:
+            data.pop("checklists_built", None)
+        return data
 
 
 def summary_from_record(record: dict) -> ChangeListItem:

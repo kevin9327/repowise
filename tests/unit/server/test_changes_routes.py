@@ -238,8 +238,11 @@ async def test_list_evidence_summary_is_opt_in_and_never_builds(
 
     plain = (await client.get(url)).json()
     assert all("evidence_summary" not in c for c in plain["items"])
+    assert "checklists_built" not in plain
 
-    rows = {c["id"]: c for c in (await client.get(url, params={"evidence": "true"})).json()["items"]}
+    with_evidence = (await client.get(url, params={"evidence": "true"})).json()
+    assert with_evidence["checklists_built"] == {"built": 3, "changes": 4}
+    rows = {c["id"]: c for c in with_evidence["items"]}
     assert rows["pr-1"]["evidence_summary"] == {
         "generated_at": "2026-10-14T00:00:00+00:00",
         "ok": 1,
@@ -271,8 +274,12 @@ async def test_needs_attention_finds_what_save_evidence_wrote(client: AsyncClien
     flagged = (await client.get(url, params={"needs_attention": "true", "evidence": "true"})).json()
     assert [c["id"] for c in flagged["items"]] == ["pr-2", "pr-1"] and flagged["total"] == 2
     assert flagged["items"][0]["evidence_summary"]["attention"] == 1
-    fixes = (await client.get(url, params={"needs_attention": "true", "category": "fix"})).json()
+    fixes = (
+        await client.get(url, params={"needs_attention": "true", "category": "fix", "evidence": "true"})
+    ).json()
     assert fixes["total"] == 1 and [c["id"] for c in fixes["items"]] == ["pr-2"]
+    # The built count follows the category, not the attention filter.
+    assert fixes["checklists_built"] == {"built": 1, "changes": 1}
     # Paging runs after the confirm, over the confirmed set.
     second = (await client.get(url, params={"needs_attention": "true", "limit": 1, "offset": 1})).json()
     assert second["total"] == 2 and [c["id"] for c in second["items"]] == ["pr-1"]

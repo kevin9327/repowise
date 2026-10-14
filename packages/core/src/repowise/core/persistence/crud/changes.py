@@ -150,6 +150,20 @@ async def list_attention_candidates(
     return list(rows.all())
 
 
+async def count_checklists_built(
+    session: AsyncSession, repository_id: str, where: ChangeFilter | None = None
+) -> tuple[int, int]:
+    """``(built, changes)``: how many changes matching *where* keep a checklist."""
+    built, changes = (
+        await session.execute(
+            select(func.count(Change.evidence_json), func.count()).where(
+                *_filters(repository_id, where or ChangeFilter())
+            )
+        )
+    ).one()
+    return int(built), int(changes)
+
+
 async def get_change(session: AsyncSession, repository_id: str, ref: str) -> Change | None:
     """A change by its id, or the newest change that landed a commit (a sha of 7+ hex)."""
     found = await find_changes(session, repository_id, ref, limit=1)
