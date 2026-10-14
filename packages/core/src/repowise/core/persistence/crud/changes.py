@@ -62,8 +62,13 @@ def _filters(
     q: str | None,
     since: datetime | None = None,
     until: datetime | None = None,
+    attention: bool = False,
 ):
     clauses = [Change.repository_id == repository_id]
+    if attention:
+        # A kept checklist with an attention item. Matches json.dumps output; a
+        # prefilter only, since the text could sit inside an item's details.
+        clauses.append(Change.evidence_json.like('%"status": "attention"%'))
     if since is not None:
         clauses.append(Change.merged_at >= since)
     if until is not None:
@@ -93,15 +98,17 @@ async def list_changes(
     q: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
+    attention: bool = False,
     limit: int | None = 50,
     offset: int = 0,
 ) -> tuple[list[Change], int]:
     """A page of changes, newest merged first, and the total that matched.
 
     *since* is inclusive and *until* exclusive, on ``merged_at``; ``limit=None``
-    returns every match.
+    returns every match. *attention* keeps changes whose kept checklist may
+    flag attention (a prefilter; the caller confirms on the parsed evidence).
     """
-    clauses = _filters(repository_id, category, shape, q, since, until)
+    clauses = _filters(repository_id, category, shape, q, since, until, attention)
     total = (await session.execute(select(func.count()).select_from(Change).where(*clauses))).scalar_one()
     rows = await session.execute(
         select(Change)

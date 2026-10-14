@@ -195,3 +195,60 @@ async def test_a_slow_build_answers_building_and_runs_once(client: AsyncClient, 
         await asyncio.sleep(0.01)
     done = (await client.get(base, params={"evidence": "true"})).json()
     assert done["evidence"]["change_id"] == "pr-1" and seen == ["pr-1"]
+
+
+def _checklist(change_id: str, *statuses: str, details: list | None = None) -> str:
+    from repowise.core.changes.evidence import ChangeEvidence, EvidenceItem
+
+    return json.dumps(
+        ChangeEvidence(
+            change_id=change_id,
+            revspec=None,
+            generated_at="2026-10-14T00:00:00+00:00",
+            items=[
+                EvidenceItem(f"kind{i}", "Item", s, "measured", None, details or [], "test")
+                for i, s in enumerate(statuses)
+            ],
+        ).to_dict()
+    )
+
+
+@pytest.mark.asyncio
+async def test_list_evidence_summary_is_opt_in_and_never_builds(
+    client: AsyncClient, app, monkeypatch
+) -> None:
+    seen: list[str] = []
+    _fake_build(monkeypatch, seen)
+    repo = await create_test_repo(client)
+    async with get_session(app.state.session_factory) as session:
+        await crud.upsert_changes(
+            session,
+            repo["id"],
+            [
+                _row("pr-1", 1, evidence_json=_checklist("pr-1", "ok", "attention", "attention", "unknown")),
+                _row("pr-2", 2, evidence_json=_checklist("pr-2", "ok", "unknown")),
+                # The phrase sits in a detail, not in a status: not an attention change.
+                _row("pr-3", 3, evidence_json=_checklist("pr-3", "ok", details=[{"status": "attention"}])),
+                _row("pr-4", 4),
+            ],
+        )
+    url = f"/api/repos/{repo['id']}/changes"
+
+    plain = (await client.get(url)).json()
+    assert all("evidence_summary" not in c for c in plain["items"])
+
+    rows = {c["id"]: c for c in (await client.get(url, params={"evidence": "true"})).json()["items"]}
+    assert rows["pr-1"]["evidence_summary"] == {
+        "generated_at": "2026-10-14T00:00:00+00:00",
+        "ok": 1,
+        "attention": 2,
+        "unknown": 1,
+    }
+    assert rows["pr-2"]["evidence_summary"]["attention"] == 0
+    assert "evidence_summary" not in rows["pr-4"]
+    assert seen == []
+
+    flagged = (await client.get(url, params={"needs_attention": "true"})).json()
+    assert flagged["total"] == 1 and [c["id"] for c in flagged["items"]] == ["pr-1"]
+    paged = (await client.get(url, params={"needs_attention": "true", "offset": 1})).json()
+    assert paged["total"] == 1 and paged["items"] == []

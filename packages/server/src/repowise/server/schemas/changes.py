@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChangeIdentity(BaseModel):
@@ -103,8 +103,25 @@ class ChangeRecord(ChangeSummary):
     evidence_building: bool = False
 
 
+class ChangeEvidenceSummary(BaseModel):
+    """Status counts of a change's kept checklist; never builds one."""
+
+    generated_at: str
+    ok: int
+    attention: int
+    unknown: int
+
+
+class ChangeListItem(ChangeSummary):
+    # Sent only when the list asked for it (``?evidence=true``) and the change
+    # has a kept checklist; absent otherwise, so the default row is unchanged.
+    evidence_summary: ChangeEvidenceSummary | None = Field(
+        default=None, exclude_if=lambda v: v is None
+    )
+
+
 class ChangeListResponse(BaseModel):
-    items: list[ChangeSummary]
+    items: list[ChangeListItem]
     total: int
     limit: int
     offset: int
@@ -112,8 +129,8 @@ class ChangeListResponse(BaseModel):
     attribution: bool
 
 
-def summary_from_record(record: dict) -> ChangeSummary:
-    return ChangeSummary(
+def summary_from_record(record: dict) -> ChangeListItem:
+    return ChangeListItem(
         **{k: v for k, v in record.items() if k in ChangeSummary.model_fields},
         commit_count=len(record["commits"]),
     )

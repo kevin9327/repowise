@@ -79,8 +79,8 @@ with `REPOWISE_SEAM_CHANGE_METADATA`. See
 | Surface | Use |
 |---|---|
 | CLI | `repowise changes list [--category C] [--shape merge\|squash\|commit] [--grep TEXT]`, `repowise changes show REF [--format table\|json\|in-toto]` |
-| REST | `GET /api/repos/{id}/changes` (filters `category`, `shape`, `q`), `GET /api/repos/{id}/changes/{change_id}` |
-| Web | Changes page with category filters, and a detail page per change |
+| REST | `GET /api/repos/{id}/changes` (filters `category`, `shape`, `q`, `needs_attention`; `evidence=true` adds each row's kept checklist status counts), `GET /api/repos/{id}/changes/{change_id}` |
+| Web | Commits page, "By change" view: each change with its checklist's attention and unknown counts and a "Needs attention" filter; a detail page per change |
 
 `show` and the detail route accept a change id or any commit sha the change landed.
 Full flags: [CLI_REFERENCE.md](../reference/CLI_REFERENCE.md#repowise-changes).

@@ -262,6 +262,18 @@ def cached_evidence(row: Any) -> ChangeEvidence | None:
     return evidence if evidence.schema_version == EVIDENCE_SCHEMA_VERSION else None
 
 
+def evidence_summary(row: Any) -> dict[str, Any] | None:
+    """Status counts of the kept checklist, or ``None`` when none is kept."""
+    evidence = cached_evidence(row)
+    if evidence is None:
+        return None
+    statuses = [i.status for i in evidence.items]
+    return {
+        "generated_at": evidence.generated_at,
+        **{s: statuses.count(s) for s in ("ok", "attention", "unknown")},
+    }
+
+
 # -- inputs -------------------------------------------------------------------
 
 

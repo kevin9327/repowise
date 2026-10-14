@@ -9,13 +9,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from repowise.core.attribution import attribution_enabled
-from repowise.core.changes.collect import build_stored_evidence, cached_evidence, save_evidence
+from repowise.core.changes.collect import (
+    build_stored_evidence,
+    cached_evidence,
+    evidence_summary,
+    save_evidence,
+)
 from repowise.core.changes.evidence import ChangeEvidence
 from repowise.core.changes.record import change_record
 from repowise.core.persistence import crud
 from repowise.core.persistence.database import get_session
 from repowise.server.deps import get_db_session, resolve_request_session_factory, verify_api_key
 from repowise.server.schemas.changes import (
+    ChangeEvidenceSummary,
     ChangeListResponse,
     ChangeRecord,
     summary_from_record,
@@ -50,17 +56,40 @@ async def list_changes(
     category: str | None = Query(None, description="One commit category, e.g. fix"),
     shape: str | None = Query(None, description="merge | squash | commit"),
     q: str | None = Query(None, description="Substring of the title, id or a file path"),
+    evidence: bool = Query(
+        False, description="Add each row's kept checklist status counts; never builds one"
+    ),
+    needs_attention: bool = Query(
+        False, description="Only changes whose kept checklist has an attention item"
+    ),
     limit: int = Query(50, ge=1, le=_MAX_PAGE),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_db_session),
 ) -> ChangeListResponse:
     """A page of changes, newest merged first."""
     attribution = await _attribution(session, repo_id)
-    rows, total = await crud.list_changes(
-        session, repo_id, category=category, shape=shape, q=q, limit=limit, offset=offset
-    )
+    if needs_attention:
+        # Checklists are built on first view, so the prefiltered set stays
+        # small; confirm on the parsed evidence, then page here.
+        rows, _ = await crud.list_changes(
+            session, repo_id, category=category, shape=shape, q=q, attention=True, limit=None
+        )
+        rows = [r for r in rows if (evidence_summary(r) or {}).get("attention")]
+        total = len(rows)
+        rows = rows[offset : offset + limit]
+    else:
+        rows, total = await crud.list_changes(
+            session, repo_id, category=category, shape=shape, q=q, limit=limit, offset=offset
+        )
+    items = []
+    for r in rows:
+        item = summary_from_record(change_record(r, attribution=attribution))
+        if evidence:
+            summary = evidence_summary(r)
+            item.evidence_summary = summary and ChangeEvidenceSummary(**summary)
+        items.append(item)
     return ChangeListResponse(
-        items=[summary_from_record(change_record(r, attribution=attribution)) for r in rows],
+        items=items,
         total=total,
         limit=limit,
         offset=offset,
