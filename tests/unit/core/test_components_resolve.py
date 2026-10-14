@@ -53,9 +53,50 @@ def test_module_pages_assign_each_file_to_the_deepest_module():
     assert resolved.unassigned == ["README.md", "tools/gen.py"]
 
 
-def test_colliding_names_fall_back_to_the_full_path():
+def test_colliding_names_take_the_nearest_distinguishing_parent():
     derived = derive_from_modules([("a/core", None), ("b/core", None)])
-    assert [c.name for c in derived] == ["core", "b-core"]
+    assert [c.name for c in derived] == ["core", "core-b"]
+
+    # Layout directories (src, app, ...) do not qualify; the nearest real one does.
+    derived = derive_from_modules(
+        [("packages/ui/src/workspace", None), ("packages/web/src/app/workspace", None)]
+    )
+    assert [c.name for c in derived] == ["workspace", "workspace-web"]
+
+
+def test_route_parameter_and_group_segments_never_name_a_component():
+    derived = derive_from_modules(
+        [
+            ("web/app/repos/[id]", None),
+            ("web/app/(marketing)", None),
+            ("web/app/docs/[...slug]", None),
+            ("web/app/shop/[[...filters]]", None),
+            ("api/users/{userId}", None),
+        ]
+    )
+    assert {c.root: c.name for c in derived} == {
+        "web/app/repos/[id]": "repos",
+        "web/app/(marketing)": "app",
+        "web/app/docs/[...slug]": "docs",
+        "web/app/shop/[[...filters]]": "shop",
+        "api/users/{userId}": "users",
+    }
+
+
+def test_a_route_under_a_parameter_is_qualified_past_it():
+    derived = derive_from_modules(
+        [("web/components/settings", None), ("web/app/repos/[id]/settings", None)]
+    )
+    assert [c.name for c in derived] == ["settings", "settings-repos"]
+
+
+def test_derived_names_are_stable_across_input_order_and_unrelated_additions():
+    roots = [("a/core", None), ("b/core", None), ("web/app/repos/[id]", None)]
+    names = {c.root: c.name for c in derive_from_modules(roots)}
+    assert {c.root: c.name for c in derive_from_modules(reversed(roots))} == names
+    grown = {c.root: c.name for c in derive_from_modules([*roots, ("c/d/core", None)])}
+    assert {r: grown[r] for r in names} == names
+    assert grown["c/d/core"] == "core-d"
 
 
 def test_services_come_from_the_repo_s_own_system_graph_nodes():

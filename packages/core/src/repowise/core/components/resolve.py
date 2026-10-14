@@ -86,10 +86,8 @@ def _derived(roots: Iterable[tuple[str, str | None]], source: str) -> list[Compo
     out: list[Component] = []
     # Shallow roots first, so a short name goes to the outer directory.
     for root in sorted(cleaned, key=lambda r: (r.count("/"), r)):
-        name = _slug(root.rsplit("/", 1)[-1])
-        if not name or name.lower() in taken:
-            name = _slug(root)
-        if name.lower() in taken:
+        name = next((n for n in _names(root) if n and n.lower() not in taken), None)
+        if name is None:
             continue
         taken.add(name.lower())
         out.append(
@@ -102,6 +100,29 @@ def _derived(roots: Iterable[tuple[str, str | None]], source: str) -> list[Compo
             )
         )
     return out
+
+
+#: A framework route segment that names a parameter or a group, not a place:
+#: ``[id]``, ``[...slug]``, ``[[...opt]]``, ``(group)``, ``{id}``, ``:id``, ``$id``.
+_ROUTE_SEGMENT = re.compile(r"^(\[.*\]|\(.*\)|\{.*\}|[:$].+)$")
+#: Layout directories too generic to tell two same-named components apart.
+_LAYOUT_SEGMENTS = frozenset({"src", "lib", "app", "apps", "packages", "pkg", "internal", "source"})
+
+
+def _names(root: str) -> list[str]:
+    """Candidate names for *root*, best first.
+
+    The last segment that is not a route parameter or group, then that name
+    qualified by one ancestor, nearest first (``packages/web/src/app/workspace``
+    under a taken ``workspace`` becomes ``workspace-web``), then the whole path.
+    """
+    parts = root.split("/")
+    places = [p for p in parts if not _ROUTE_SEGMENT.match(p)] or parts
+    leaf = _slug(places[-1])
+    qualified = [
+        _slug(f"{leaf}-{p}") for p in reversed(places[:-1]) if p.lower() not in _LAYOUT_SEGMENTS
+    ]
+    return [leaf, *qualified, _slug(root)]
 
 
 def _slug(text: str) -> str:
