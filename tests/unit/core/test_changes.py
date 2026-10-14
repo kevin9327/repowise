@@ -195,6 +195,8 @@ def test_title_skips_boilerplate_and_trailers():
     subject = "Merge remote-tracking branch 'origin/x' into main"
     assert change_title(subject, "# Conflicts:\n#\ta.py\n", True) == subject
     assert change_title(subject, "Conflicts:\n\ta.py\n", True) == subject
+    # A body line that only starts with "#" is still a title.
+    assert change_title(subject, "#123 Fix foo\n", True) == "#123 Fix foo"
 
 
 def test_repeated_identity_gets_a_distinct_id_and_keeps_it(tmp_path):

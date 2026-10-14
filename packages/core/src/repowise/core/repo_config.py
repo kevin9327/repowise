@@ -436,16 +436,25 @@ def _ensure_gitignored(repo_path: Path | str, pattern: str, comment: str) -> Non
 
 
 def _git_ignores(repo_path: Path | str, pattern: str) -> bool:
-    """Whether git's ignore rules already cover *pattern*; ``False`` when git cannot say."""
+    """Whether a ``.gitignore`` inside the repo already covers *pattern*.
+
+    Rules from ``.git/info/exclude`` or a global excludes file do not count:
+    teammates do not share them. ``False`` when git cannot say.
+    """
     import subprocess
 
     try:
         result = subprocess.run(
-            ["git", "check-ignore", "-q", "--no-index", pattern],
+            ["git", "check-ignore", "-v", "--no-index", pattern],
             cwd=repo_path,
             capture_output=True,
+            text=True,
             timeout=10,
         )
     except (OSError, subprocess.SubprocessError):
         return False
-    return result.returncode == 0
+    if result.returncode != 0:
+        return False
+    # ``<source>:<line>:<rule><TAB><path>``; a repo .gitignore is reported relative.
+    source = result.stdout.split("\t", 1)[0].rsplit(":", 2)[0]
+    return Path(source).name == ".gitignore" and not Path(source).is_absolute()

@@ -312,6 +312,17 @@ def test_owner_key_leaves_a_gitignore_that_already_covers_it(tmp_path):
     assert (tmp_path / ".gitignore").read_text(encoding="utf-8") == ".repowise/\n"
 
 
+def test_owner_key_is_still_gitignored_when_only_info_exclude_covers_it(tmp_path):
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".git" / "info").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".git" / "info" / "exclude").write_text(".repowise/\n", encoding="utf-8")
+    assert snapshot_mod.owner_key(tmp_path) is not None
+    ignored = (tmp_path / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert ".repowise/events.key" in ignored
+
+
 def test_main_owners_are_digested_under_the_repo_key(tmp_path):
     key = snapshot_mod.owner_key(tmp_path)
 
