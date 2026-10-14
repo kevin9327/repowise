@@ -1,0 +1,125 @@
+"""The report document, its evidence items and the ``report-section`` seam.
+
+Each evidence item ("check") keeps the keys of an OpenSSF Scorecard v2 check
+result (``name``, ``score``, ``reason``, ``details``, ``documentation`` with
+``url`` and ``short``) and adds ``method`` and ``basis``. As in Scorecard,
+``score`` is 0 to 10 and -1 means inconclusive. Unlike Scorecard it may be a
+one-decimal float, and it is ``None`` on a descriptive item (counts and lists
+with no scale): evidence is never turned into a score it does not carry.
+
+A section is registered under ``SeamRegistry("report-section")`` by name; a
+plugin adds its own the same way, building its items with :func:`check`.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable, Iterable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from repowise.core.registry.plugins import SeamRegistry
+
+SCHEMA_VERSION = 1
+INCONCLUSIVE = -1
+#: ``measured`` (counted from the index), ``inferred`` (derived by a static
+#: rule), ``declared`` (read from what the repository says about itself),
+#: ``unresolved`` (the evidence is missing) and ``gated`` (held back on a
+#: language the finding layer is not verified for).
+BASES = ("measured", "inferred", "declared", "unresolved", "gated")
+DOCS_URL = (
+    "https://github.com/repowise-dev/repowise/blob/main/docs/reference/CLI_REFERENCE.md"
+    "#repowise-report-assessment-path"
+)
+
+
+def check(
+    name: str,
+    *,
+    reason: str,
+    basis: str,
+    method: str,
+    score: float | None = None,
+    details: Iterable[str] = (),
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """One evidence item. Missing or held-back evidence is always inconclusive."""
+    if basis not in BASES:
+        raise ValueError(f"unknown basis {basis!r}; expected one of {BASES}")
+    if basis in ("unresolved", "gated"):
+        score = INCONCLUSIVE
+    elif score is not None:
+        score = round(min(max(float(score), 0.0), 10.0), 1)
+    item: dict[str, Any] = {
+        "name": name,
+        "score": score,
+        "reason": reason,
+        "details": list(details),
+        "method": method,
+        "basis": basis,
+    }
+    if data is not None:
+        item["data"] = data
+    return item
+
+
+@dataclass
+class ReportContext:
+    """One indexed repository, open for reading, with shared reads cached."""
+
+    session: Any
+    repository_id: str
+    repo_root: Path
+    alias: str | None = None
+    head_commit: str | None = None
+    _cache: dict[str, Any] = field(default_factory=dict)
+
+    async def components(self) -> Any:
+        """Declared and derived components (:class:`RepoComponents`)."""
+        if "components" not in self._cache:
+            from repowise.core.components.store import load_repo_components, workspace_services
+
+            self._cache["components"] = await load_repo_components(
+                self.session,
+                self.repository_id,
+                self.repo_root,
+                services=workspace_services(self.repo_root),
+            )
+        return self._cache["components"]
+
+    async def rollups(self) -> dict[str, dict[str, Any]]:
+        """Component rollups by name, plus the whole repository under ``None``."""
+        if "rollups" not in self._cache:
+            from repowise.core.components.store import component_rollups
+
+            found = await self.components()
+            files = {n: p for n, p in found.resolved.files.items() if p}
+            everything = sorted(
+                {f for paths in files.values() for f in paths} | set(found.resolved.unassigned)
+            )
+            rolled: dict[Any, dict[str, Any]] = await component_rollups(
+                self.session, self.repository_id, files, found.test_files
+            )
+            if everything:
+                whole = await component_rollups(
+                    self.session, self.repository_id, {"": everything}, found.test_files
+                )
+                rolled[None] = whole[""]
+            self._cache["rollups"] = rolled
+        return self._cache["rollups"]
+
+
+@dataclass(frozen=True)
+class Section:
+    """A report section: *collect* returns its checks, or ``None`` when the
+    section does not apply to this repository (it is then left out)."""
+
+    title: str
+    #: One line saying what the section measures; the documentation ``short``.
+    summary: str
+    collect: Callable[[ReportContext], Awaitable[list[dict[str, Any]] | None]]
+    #: Sections are listed by this, then by name.
+    order: int = 100
+
+
+report_sections: SeamRegistry[Section] = SeamRegistry("report-section")

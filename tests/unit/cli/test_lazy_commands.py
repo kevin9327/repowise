@@ -39,7 +39,7 @@ _EXPECTED_NAMES = frozenset(
         "events", "expand",
         "export", "generate", "generate-claude-md", "health", "hook",
         "impacted-tests", "init", "login", "logout", "mcp", "next", "overlap", "plugins",
-        "publish", "reindex",
+        "publish", "reindex", "report",
         "restyle",
         "risk", "saved", "savings", "search", "security", "serve", "status", "symbol",
         "telemetry", "uninstall", "update", "watch", "whats-new", "whoami", "why",

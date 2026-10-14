@@ -112,8 +112,8 @@ async def collect_facts(
     capped = len(recent) >= MAX_RECENT_ROWS
     key = owner_key(repo_root)
     key_id = _digest(key.hex()) if key else None
-    governing, stale = await _decisions(session, repository_id)
-    contracts = _provided_contracts(repo_root, head_commit)
+    governing, stale = await governing_decisions(session, repository_id)
+    contracts = provided_contracts(repo_root, head_commit)
 
     from repowise.core.analysis.owners import people_resolver
     from repowise.core.components.catalog import owner_group_name
@@ -207,9 +207,10 @@ async def _recent_commit_files(session: Any, repository_id: str) -> list[dict[st
     return [dict(r._mapping) for r in rows]
 
 
-async def _decisions(
+async def governing_decisions(
     session: Any, repository_id: str
 ) -> tuple[dict[str, list[tuple[str, str]]], set[str]]:
+    """Governing ``(id, title)`` pairs per file, and the ids at or past :data:`STALE_THRESHOLD`."""
     from repowise.core.persistence.crud.authority import governing_decisions_by_file
     from repowise.core.persistence.models import DecisionRecord
 
@@ -227,7 +228,7 @@ async def _decisions(
     return governing, set(stale)
 
 
-def _provided_contracts(repo_root: Path, head_commit: str | None) -> dict[str, dict[str, int]] | None:
+def provided_contracts(repo_root: Path, head_commit: str | None) -> dict[str, dict[str, int]] | None:
     """``{file: {contract_id: consumer links}}`` for this repo's provided contracts.
 
     ``None`` outside a workspace, or when the workspace's contracts were not

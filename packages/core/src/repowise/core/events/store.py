@@ -180,7 +180,7 @@ async def record_snapshot(
     events: list[EngineEvent] = []
     # A gap marker's stamp never equals a real one, so a run after it is a baseline.
     if previous is not None and previous.stamp == stamp:
-        before = await _run_facts(session, previous.id)
+        before = await run_facts(session, previous.id)
         events = await _store_events(
             session, repo, run, previous, before, facts, settings, taken_at
         )
@@ -222,7 +222,8 @@ async def record_gap(
     await session.flush()
 
 
-async def _run_facts(session: Any, run_id: str) -> dict[str, dict[str, Any]]:
+async def run_facts(session: Any, run_id: str) -> dict[str, dict[str, Any]]:
+    """The component facts one snapshot run stored, by component name."""
     from repowise.core.persistence.models import ComponentSnapshot
 
     rows = await session.execute(
