@@ -204,12 +204,13 @@ async def save_evidence(
     """Keep *evidence* on its change row."""
     from sqlalchemy import update
 
+    from repowise.core.persistence.crud.changes import dump_evidence
     from repowise.core.persistence.models import Change
 
     await session.execute(
         update(Change)
         .where(Change.repository_id == repo_id, Change.change_id == change_id)
-        .values(evidence_json=json.dumps(evidence.to_dict()))
+        .values(evidence_json=dump_evidence(evidence.to_dict()))
     )
 
 
@@ -229,7 +230,9 @@ async def change_evidence(
     evidence = await build_stored_evidence(
         session, repo_id, repo_root, row, risk=risk, health=health
     )
-    row.evidence_json = json.dumps(evidence.to_dict())
+    from repowise.core.persistence.crud.changes import dump_evidence
+
+    row.evidence_json = dump_evidence(evidence.to_dict())
     await session.flush()
     return evidence
 
@@ -267,11 +270,11 @@ def evidence_summary(row: Any) -> dict[str, Any] | None:
     evidence = cached_evidence(row)
     if evidence is None:
         return None
-    statuses = [i.status for i in evidence.items]
-    return {
-        "generated_at": evidence.generated_at,
-        **{s: statuses.count(s) for s in ("ok", "attention", "unknown")},
-    }
+    counts = {"generated_at": evidence.generated_at, "ok": 0, "attention": 0, "unknown": 0}
+    for item in evidence.items:
+        # A status this reader does not know is not a pass.
+        counts[item.status if item.status in ("ok", "attention") else "unknown"] += 1
+    return counts
 
 
 # -- inputs -------------------------------------------------------------------

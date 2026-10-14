@@ -197,20 +197,22 @@ async def test_a_slow_build_answers_building_and_runs_once(client: AsyncClient, 
     assert done["evidence"]["change_id"] == "pr-1" and seen == ["pr-1"]
 
 
-def _checklist(change_id: str, *statuses: str, details: list | None = None) -> str:
+def _evidence(change_id: str, *statuses: str, details: list | None = None):
     from repowise.core.changes.evidence import ChangeEvidence, EvidenceItem
 
-    return json.dumps(
-        ChangeEvidence(
-            change_id=change_id,
-            revspec=None,
-            generated_at="2026-10-14T00:00:00+00:00",
-            items=[
-                EvidenceItem(f"kind{i}", "Item", s, "measured", None, details or [], "test")
-                for i, s in enumerate(statuses)
-            ],
-        ).to_dict()
+    return ChangeEvidence(
+        change_id=change_id,
+        revspec=None,
+        generated_at="2026-10-14T00:00:00+00:00",
+        items=[
+            EvidenceItem(f"kind{i}", "Item", s, "measured", None, details or [], "test")
+            for i, s in enumerate(statuses)
+        ],
     )
+
+
+def _checklist(change_id: str, *statuses: str, details: list | None = None) -> str:
+    return crud.dump_evidence(_evidence(change_id, *statuses, details=details).to_dict())
 
 
 @pytest.mark.asyncio
@@ -252,3 +254,41 @@ async def test_list_evidence_summary_is_opt_in_and_never_builds(
     assert flagged["total"] == 1 and [c["id"] for c in flagged["items"]] == ["pr-1"]
     paged = (await client.get(url, params={"needs_attention": "true", "offset": 1})).json()
     assert paged["total"] == 1 and paged["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_needs_attention_finds_what_save_evidence_wrote(client: AsyncClient, app) -> None:
+    from repowise.core.changes.collect import save_evidence
+
+    repo = await create_test_repo(client)
+    await _seed(app, repo["id"])  # pr-1 feature, pr-2 fix, pr-3 feature
+    async with get_session(app.state.session_factory) as session:
+        await save_evidence(session, repo["id"], "pr-1", _evidence("pr-1", "attention"))
+        await save_evidence(session, repo["id"], "pr-2", _evidence("pr-2", "ok", "attention"))
+        await save_evidence(session, repo["id"], "pr-3", _evidence("pr-3", "ok"))
+    url = f"/api/repos/{repo['id']}/changes"
+
+    flagged = (await client.get(url, params={"needs_attention": "true", "evidence": "true"})).json()
+    assert [c["id"] for c in flagged["items"]] == ["pr-2", "pr-1"] and flagged["total"] == 2
+    assert flagged["items"][0]["evidence_summary"]["attention"] == 1
+    fixes = (await client.get(url, params={"needs_attention": "true", "category": "fix"})).json()
+    assert fixes["total"] == 1 and [c["id"] for c in fixes["items"]] == ["pr-2"]
+    # Paging runs after the confirm, over the confirmed set.
+    second = (await client.get(url, params={"needs_attention": "true", "limit": 1, "offset": 1})).json()
+    assert second["total"] == 2 and [c["id"] for c in second["items"]] == ["pr-1"]
+
+
+def test_evidence_summary_never_reads_missing_or_unknown_status_as_clean() -> None:
+    from types import SimpleNamespace
+
+    from repowise.core.changes.collect import evidence_summary
+
+    odd = SimpleNamespace(evidence_json=_checklist("pr-1", "ok", "skipped"))
+    assert evidence_summary(odd) == {
+        "generated_at": "2026-10-14T00:00:00+00:00",
+        "ok": 1,
+        "attention": 0,
+        "unknown": 1,
+    }
+    empty = evidence_summary(SimpleNamespace(evidence_json=_checklist("pr-1")))
+    assert empty is not None and (empty["ok"], empty["attention"], empty["unknown"]) == (0, 0, 0)
