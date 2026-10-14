@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, model_serializer
 
 
 class ChangeIdentity(BaseModel):
@@ -115,9 +115,14 @@ class ChangeEvidenceSummary(BaseModel):
 class ChangeListItem(ChangeSummary):
     # Sent only when the list asked for it (``?evidence=true``) and the change
     # has a kept checklist; absent otherwise, so the default row is unchanged.
-    evidence_summary: ChangeEvidenceSummary | None = Field(
-        default=None, exclude_if=lambda v: v is None
-    )
+    evidence_summary: ChangeEvidenceSummary | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_summary(self, handler):  # no return annotation: keeps the schema
+        data = handler(self)
+        if self.evidence_summary is None:
+            data.pop("evidence_summary", None)
+        return data
 
 
 class ChangeListResponse(BaseModel):
