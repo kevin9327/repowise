@@ -281,16 +281,16 @@ def _ownership(
         name = row and row.get("primary_owner_name")
         if not name:
             continue
-        key = resolve(name, row.get("primary_owner_email"))
-        if key and not resolve.is_bot(key):
-            owners[key] += 1
+        person = resolve(name, row.get("primary_owner_email"))
+        if person and not resolve.is_bot(person):
+            owners[person] += 1
     owned = sum(owners.values())
     main: list[str] = []
     held = 0
-    for key, count in sorted(owners.items(), key=lambda kv: (-kv[1], kv[0])):
+    for person, count in sorted(owners.items(), key=lambda kv: (-kv[1], kv[0])):
         if held * 2 > owned:
             break
-        main.append(key)
+        main.append(person)
         held += count
     recent_authors = {resolve(c["author_name"], c["author_email"]) for c in commits}
     return {

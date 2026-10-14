@@ -303,6 +303,33 @@ def test_owner_key_is_kept_and_digests_are_not_plain_hashes(tmp_path):
     assert digest != hashlib.sha256(b"ann@example.com").hexdigest()[: len(digest)]
 
 
+def test_owner_key_leaves_a_gitignore_that_already_covers_it(tmp_path):
+    import subprocess
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text(".repowise/\n", encoding="utf-8")
+    assert snapshot_mod.owner_key(tmp_path) is not None
+    assert (tmp_path / ".gitignore").read_text(encoding="utf-8") == ".repowise/\n"
+
+
+def test_main_owners_are_digested_under_the_repo_key(tmp_path):
+    key = snapshot_mod.owner_key(tmp_path)
+
+    def resolve(name, email):
+        return email
+
+    resolve.is_bot = lambda person: False
+    rows = {
+        "a.py": {"primary_owner_name": "Ann", "primary_owner_email": "ann@example.com"},
+        "b.py": {"primary_owner_name": "Ann", "primary_owner_email": "ann@example.com"},
+        "c.py": {"primary_owner_name": "Bob", "primary_owner_email": "bob@example.com"},
+    }
+    commits = [{"sha": "s1", "author_name": "Ann", "author_email": "ann@example.com"}]
+    out = snapshot_mod._ownership(list(rows), rows, commits, resolve, key, False)
+    assert out["main_owners"] == [snapshot_mod._keyed(key, "ann@example.com")]
+    assert (out["owned_files"], out["owner_count"], out["active_main_owners"]) == (3, 2, 1)
+
+
 def test_credentials_never_leave_in_the_source_url():
     from repowise.core.events.store import _public_url
 
