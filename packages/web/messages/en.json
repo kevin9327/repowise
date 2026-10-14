@@ -107,7 +107,6 @@
     "refactoring": "Refactoring",
     "files": "Files",
     "commits": "Commits",
-    "changes": "Changes",
     "contributors": "Contributors",
     "decisions": "Decisions",
     "stats": "Stats",
@@ -244,10 +243,12 @@
       "scoreBehaviourDescription": "Two views of the same model: where the cuts fall, and what commit shape lands you above them.",
       "changeRisk": "Change risk",
       "evolutionTitle": "How the work changed shape",
-      "evolutionDescription": "Commit categories over time, read off the subject line. Fixes carry the accent because that is the series this chart exists to show."
+      "evolutionDescription": "Commit categories over time, read off the subject line. Fixes carry the accent because that is the series this chart exists to show.",
+      "viewLabel": "Group the history",
+      "viewByChange": "By change",
+      "viewByCommit": "By commit"
     },
     "changes": {
-      "title": "Changes",
       "description": "Every merged change on the main line, read back from git: pull and merge requests, Gerrit changes and lone commits, with the files each one landed.",
       "emptyTitle": "No changes indexed yet",
       "emptyHint": "Changes are read from git history on the next index or update.",
@@ -281,7 +282,20 @@
       "evidenceGenerated": "Generated {date}",
       "statusOk": "ok",
       "statusAttention": "attention",
-      "statusUnknown": "unknown"
+      "statusUnknown": "unknown",
+      "byChangeTitle": "Merged changes",
+      "byChangeDescription": "One row per merged change. Open a change for its evidence checklist: owners, reaching tests, contracts, decisions crossed and health delta. The Evidence column counts what that checklist flagged.",
+      "commits": "Commits",
+      "evidence": "Evidence",
+      "evidenceNotBuilt": "Not built",
+      "evidenceNotBuiltHint": "The checklist is built the first time the change is opened.",
+      "evidenceClear": "Nothing flagged",
+      "evidenceAttention": "{count, plural, one {# needs attention} other {# need attention}}",
+      "evidenceUnknown": "{count} unknown",
+      "needsAttention": "Needs attention",
+      "attentionScope": "Only changes with a built checklist are listed. A change's checklist is built the first time its page is opened.",
+      "attentionEmpty": "No built checklist flags anything for attention.",
+      "filterEmpty": "No change matches this filter."
     },
     "architecture": {
       "tabs": {

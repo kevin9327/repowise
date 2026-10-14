@@ -107,7 +107,6 @@
     "refactoring": "重构",
     "files": "文件",
     "commits": "提交",
-    "changes": "变更",
     "contributors": "贡献者",
     "decisions": "决策",
     "stats": "统计",
@@ -244,10 +243,12 @@
       "scoreBehaviourDescription": "同一个模型的两种视角：分档线落在哪里，以及什么样的提交形态能让你高于这些线。",
       "changeRisk": "变更风险",
       "evolutionTitle": "工作形态如何变化",
-      "evolutionDescription": "按提交标题归类出的各类提交随时间的变化。修复类高亮显示，因为这张图存在的意义就是展示这一条序列。"
+      "evolutionDescription": "按提交标题归类出的各类提交随时间的变化。修复类高亮显示，因为这张图存在的意义就是展示这一条序列。",
+      "viewLabel": "历史分组方式",
+      "viewByChange": "按变更",
+      "viewByCommit": "按提交"
     },
     "changes": {
-      "title": "变更",
       "description": "主线上每个已合并的变更，均从 git 历史读取：拉取请求、合并请求、Gerrit 变更和单独提交，以及每个变更带入的文件。",
       "emptyTitle": "尚未索引任何变更",
       "emptyHint": "变更会在下一次索引或更新时从 git 历史读取。",
@@ -281,7 +282,20 @@
       "evidenceGenerated": "生成于 {date}",
       "statusOk": "正常",
       "statusAttention": "需关注",
-      "statusUnknown": "未知"
+      "statusUnknown": "未知",
+      "byChangeTitle": "已合并的变更",
+      "byChangeDescription": "每个已合并的变更一行。打开一个变更即可查看其证据清单：负责人、可达测试、契约、涉及的决策和健康度变化。“证据”列统计该清单标记的项目。",
+      "commits": "提交",
+      "evidence": "证据",
+      "evidenceNotBuilt": "尚未生成",
+      "evidenceNotBuiltHint": "首次打开该变更时会生成证据清单。",
+      "evidenceClear": "无标记项",
+      "evidenceAttention": "{count} 项需关注",
+      "evidenceUnknown": "{count} 项未知",
+      "needsAttention": "需关注",
+      "attentionScope": "仅列出已生成证据清单的变更。首次打开变更页面时会生成其证据清单。",
+      "attentionEmpty": "已生成的证据清单中没有需关注的项目。",
+      "filterEmpty": "没有符合此筛选条件的变更。"
     },
     "architecture": {
       "tabs": {

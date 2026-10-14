@@ -9,7 +9,7 @@ import { OverviewSection } from "@repowise-dev/ui/overview";
 import { formatDate } from "@repowise-dev/ui/lib/format";
 import { Badge } from "@repowise-dev/ui/ui/badge";
 import type { EvidenceItem } from "@repowise-dev/types/changes";
-import { changeLabel } from "@/lib/changes";
+import { changeLabel, commitsViewHref } from "@/lib/changes";
 import { getChange } from "@/lib/api/changes";
 
 interface Props {
@@ -122,7 +122,7 @@ export default async function ChangeDetailPage({ params }: Props) {
       icon={<GitPullRequest />}
       title={`${changeLabel(change)} ${change.title}`}
       actions={
-        <Link href={`/repos/${id}/changes`} className="text-xs hover:underline">
+        <Link href={commitsViewHref(id, "changes")} className="text-xs hover:underline">
           {t("back")}
         </Link>
       }
