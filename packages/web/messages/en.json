@@ -293,9 +293,23 @@
       "evidenceAttention": "{count, plural, one {# needs attention} other {# need attention}}",
       "evidenceUnknown": "{count} unknown",
       "needsAttention": "Needs attention",
-      "attentionScope": "Only changes with a built checklist are listed. A change's checklist is built the first time its page is opened.",
+      "attentionScope": "Only changes with a built checklist are listed.",
       "attentionEmpty": "No built checklist flags anything for attention.",
-      "filterEmpty": "No change matches this filter."
+      "filterEmpty": "No change matches this filter.",
+      "checklistsBuilt": "Checklists built for {built} of {changes} changes.",
+      "checklistsBuildHint": "A change's checklist is built when its page is opened, or by `repowise changes show REF` or `repowise changes export`.",
+      "loadErrorTitle": "Could not load changes",
+      "loadErrorBody": "The change list could not be read from the server. Reload the page to try again.",
+      "categories": {
+        "feature": "feature",
+        "fix": "fix",
+        "refactor": "refactor",
+        "docs": "docs",
+        "test": "test",
+        "deps": "deps",
+        "chore": "chore",
+        "other": "other"
+      }
     },
     "architecture": {
       "tabs": {

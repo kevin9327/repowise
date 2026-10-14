@@ -1,13 +1,18 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
+import { ApiError } from "@repowise-dev/ui/shared/api-error";
 import { EmptyState } from "@repowise-dev/ui/shared/empty-state";
 import { OverviewSection } from "@repowise-dev/ui/overview";
 import { ChangesTable } from "@/components/changes/changes-table";
 import { listChanges } from "@/lib/api/changes";
-import { byChangeHref, type ByChangeQuery } from "@/lib/changes";
+import {
+  CHANGE_CATEGORIES,
+  byChangeHref,
+  categoryLabel,
+  type ByChangeQuery,
+} from "@/lib/changes";
 
 const PAGE_SIZE = 50;
-const CATEGORIES = ["feature", "fix", "refactor", "docs", "test", "deps", "chore", "other"];
 
 export interface ByChangeParams {
   category?: string | undefined;
@@ -26,11 +31,13 @@ function FilterChips({
   href,
   category,
   attention,
+  categories,
   labels,
 }: {
   href: Href;
   category: string | undefined;
   attention: boolean;
+  categories: { value: string; label: string }[];
   labels: { needsAttention: string; category: string; allCategories: string };
 }) {
   return (
@@ -47,13 +54,13 @@ function FilterChips({
         <Link href={href({ attention })} className={`${CHIP} ${category ? "" : ACTIVE}`}>
           {labels.allCategories}
         </Link>
-        {CATEGORIES.map((c) => (
+        {categories.map((c) => (
           <Link
-            key={c}
-            href={href({ category: c, attention })}
-            className={`${CHIP} ${category === c ? ACTIVE : ""}`}
+            key={c.value}
+            href={href({ category: c.value, attention })}
+            className={`${CHIP} ${category === c.value ? ACTIVE : ""}`}
           >
-            {c}
+            {c.label}
           </Link>
         ))}
       </nav>
@@ -83,12 +90,13 @@ function Pager({ showing, newer, older }: { showing: string; newer: PagerLink | 
  * The Commits page grouped by merged change, with each change's kept
  * evidence checklist summarised. Server-rendered: filters and paging are
  * query parameters, so every view is a link. The list reads checklists the
- * change pages already built and never builds one itself.
+ * change pages already built and never builds one itself, so it says how
+ * many are built: a short Needs attention list is otherwise unreadable.
  */
 export async function ByChangeView({ repoId, params }: { repoId: string; params: ByChangeParams }) {
   const t = await getTranslations("views.changes");
   const offset = Math.max(0, Number.parseInt(params.offset ?? "0", 10) || 0);
-  const category = CATEGORIES.includes(params.category ?? "") ? params.category : undefined;
+  const category = CHANGE_CATEGORIES.includes(params.category ?? "") ? params.category : undefined;
   const attention = params.attention === "1";
 
   const page = await listChanges(repoId, {
@@ -99,7 +107,11 @@ export async function ByChangeView({ repoId, params }: { repoId: string; params:
     needs_attention: attention || undefined,
   }).catch(() => null);
 
-  const isEmpty = !page || (page.total === 0 && !category && !attention);
+  // A failed read is an error, never an empty (clean-looking) list.
+  if (page === null) {
+    return <ApiError title={t("loadErrorTitle")} message={t("loadErrorBody")} />;
+  }
+  const isEmpty = page.total === 0 && !category && !attention;
   if (isEmpty) {
     return (
       <EmptyState
@@ -115,6 +127,7 @@ export async function ByChangeView({ repoId, params }: { repoId: string; params:
     href: href({ category, attention, offset: to }),
     label,
   });
+  const built = page.checklists_built;
 
   return (
     <OverviewSection title={t("byChangeTitle")} description={t("byChangeDescription")}>
@@ -122,15 +135,18 @@ export async function ByChangeView({ repoId, params }: { repoId: string; params:
         href={href}
         category={category}
         attention={attention}
+        categories={CHANGE_CATEGORIES.map((c) => ({ value: c, label: categoryLabel(t, c) }))}
         labels={{
           needsAttention: t("needsAttention"),
           category: t("category"),
           allCategories: t("allCategories"),
         }}
       />
-      {attention && (
-        <p className="mb-3 text-xs text-[var(--color-text-tertiary)]">{t("attentionScope")}</p>
-      )}
+      <p className="mb-3 text-xs text-[var(--color-text-tertiary)]">
+        {attention && `${t("attentionScope")} `}
+        {built && `${t("checklistsBuilt", { built: built.built, changes: built.changes })} `}
+        {t("checklistsBuildHint")}
+      </p>
       {page.items.length === 0 ? (
         <p className="py-6 text-sm text-[var(--color-text-secondary)]">
           {t(attention ? "attentionEmpty" : "filterEmpty")}

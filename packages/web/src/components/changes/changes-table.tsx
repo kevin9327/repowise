@@ -5,7 +5,7 @@ import { useTranslations } from "next-intl";
 import { ResponsiveTable, type ResponsiveColumn } from "@repowise-dev/ui/shared/responsive-table";
 import { formatDate } from "@repowise-dev/ui/lib/format";
 import type { ChangeEvidenceSummary, ChangeListItem } from "@/lib/api/changes";
-import { changeLabel } from "@/lib/changes";
+import { categoryLabel, changeLabel } from "@/lib/changes";
 
 /**
  * The kept checklist in one cell: attention first, then unknown, quiet when
@@ -59,10 +59,12 @@ export function ChangesTable({
     {
       key: "id",
       header: t("change"),
+      cellClassName: "whitespace-nowrap",
       render: (c) => (
         <Link
           href={`/repos/${repoId}/changes/${encodeURIComponent(c.id)}`}
-          className="font-mono text-xs text-[var(--color-accent-primary)] hover:underline"
+          title={c.id}
+          className="inline-block max-w-[12rem] truncate whitespace-nowrap align-bottom font-mono text-xs text-[var(--color-accent-primary)] hover:underline"
         >
           {changeLabel(c)}
         </Link>
@@ -93,7 +95,7 @@ export function ChangesTable({
       key: "category",
       header: t("category"),
       priority: 2,
-      render: (c) => <span className="text-xs">{c.category}</span>,
+      render: (c) => <span className="text-xs">{categoryLabel(t, c.category)}</span>,
     },
     {
       key: "commits",

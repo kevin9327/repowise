@@ -38,3 +38,11 @@ export function byChangeHref(repoId: string, next: ByChangeQuery = {}): string {
   if (next.offset) q.set("offset", String(next.offset));
   return `${commitsViewHref(repoId, "commits")}?${q.toString()}`;
 }
+
+/** The commit categories a change can carry, in chip order. */
+export const CHANGE_CATEGORIES = ["feature", "fix", "refactor", "docs", "test", "deps", "chore", "other"];
+
+/** A category's name under `views.changes`; one this list does not know shows as stored. */
+export function categoryLabel(t: (key: string) => string, category: string): string {
+  return CHANGE_CATEGORIES.includes(category) ? t(`categories.${category}`) : category;
+}

@@ -293,9 +293,23 @@
       "evidenceAttention": "{count} 项需关注",
       "evidenceUnknown": "{count} 项未知",
       "needsAttention": "需关注",
-      "attentionScope": "仅列出已生成证据清单的变更。首次打开变更页面时会生成其证据清单。",
+      "attentionScope": "仅列出已生成证据清单的变更。",
       "attentionEmpty": "已生成的证据清单中没有需关注的项目。",
-      "filterEmpty": "没有符合此筛选条件的变更。"
+      "filterEmpty": "没有符合此筛选条件的变更。",
+      "checklistsBuilt": "{changes} 个变更中已有 {built} 个生成证据清单。",
+      "checklistsBuildHint": "打开变更页面，或运行 `repowise changes show REF` 或 `repowise changes export` 时，会生成该变更的证据清单。",
+      "loadErrorTitle": "无法加载变更",
+      "loadErrorBody": "无法从服务器读取变更列表。请重新加载页面重试。",
+      "categories": {
+        "feature": "功能",
+        "fix": "修复",
+        "refactor": "重构",
+        "docs": "文档",
+        "test": "测试",
+        "deps": "依赖",
+        "chore": "杂务",
+        "other": "其他"
+      }
     },
     "architecture": {
       "tabs": {

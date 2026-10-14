@@ -5,7 +5,9 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { createTranslator } from "next-intl";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import messages from "../../../messages/en.json";
+import zhMessages from "../../../messages/zh-CN.json";
 import type { ChangeListItem, ChangeListResponse } from "@/lib/api/changes";
+import { CHANGE_CATEGORIES, categoryLabel } from "@/lib/changes";
 
 const listChanges = vi.fn();
 vi.mock("@/lib/api/changes", () => ({ listChanges: (...a: unknown[]) => listChanges(...a) }));
@@ -127,5 +129,32 @@ describe("ByChangeView", () => {
     listChanges.mockResolvedValue(page([]));
     await show();
     expect(screen.getByText("No changes indexed yet")).toBeTruthy();
+  });
+
+  it("shows an error, never the empty state, when the list cannot be read", async () => {
+    listChanges.mockRejectedValue(new Error("502"));
+    await show({ attention: "1" });
+    expect(screen.getByRole("alert").textContent).toContain("Could not load changes");
+    expect(screen.queryByText("No changes indexed yet")).toBeNull();
+    expect(screen.queryByText("No built checklist flags anything for attention.")).toBeNull();
+  });
+
+  it("says how many checklists are built and how one gets built", async () => {
+    listChanges.mockResolvedValue({ ...page([]), checklists_built: { built: 1, changes: 505 } });
+    await show({ attention: "1" });
+    expect(screen.getByText(/Checklists built for 1 of 505 changes\./)).toBeTruthy();
+    expect(screen.getByText(/repowise changes show REF/)).toBeTruthy();
+  });
+
+  it("names every category chip in both locales", () => {
+    for (const locale of [messages, zhMessages]) {
+      const t = createTranslator({ locale: "en", messages: locale, namespace: "views.changes" as never });
+      for (const c of CHANGE_CATEGORIES) {
+        expect(categoryLabel(t as (k: string) => string, c)).not.toContain("categories.");
+      }
+    }
+    const zh = createTranslator({ locale: "zh-CN", messages: zhMessages, namespace: "views.changes" as never });
+    expect(categoryLabel(zh as (k: string) => string, "fix")).toBe("修复");
+    expect(categoryLabel(zh as (k: string) => string, "custom")).toBe("custom");
   });
 });
