@@ -247,14 +247,17 @@ async def overview_changes(session: Any, repository: Any) -> dict[str, Any]:
     The window ends at the newest merged change, so an idle repository still
     shows its last stretch of work; ``window`` names both ends.
     """
-    until = (
+    oldest, until = (
         await session.execute(
-            select(func.max(Change.merged_at)).where(Change.repository_id == repository.id)
+            select(func.min(Change.merged_at), func.max(Change.merged_at)).where(
+                Change.repository_id == repository.id
+            )
         )
-    ).scalar()
+    ).one()
     if until is None:
         return {"total": 0}
     until = until if until.tzinfo else until.replace(tzinfo=UTC)
+    oldest = oldest if oldest.tzinfo else oldest.replace(tzinfo=UTC)
     since = until - timedelta(days=OVERVIEW_WINDOW_DAYS)
     rows = (
         await session.execute(
@@ -266,12 +269,17 @@ async def overview_changes(session: Any, repository: Any) -> dict[str, Any]:
     weeks: Counter[str] = Counter(
         _week(m if m.tzinfo else m.replace(tzinfo=UTC)) for m, _, _ in rows
     )
-    by_week, cursor = [], datetime.fromisoformat(_week(since)).date()
+    window: dict[str, Any] = {"days": OVERVIEW_WINDOW_DAYS, "since": _iso(since), "until": _iso(until)}
+    # The index keeps a bounded commit window: weeks before its oldest change
+    # are unknown, not zero, so the weekly series starts there.
+    if oldest > since:
+        window["history_from"] = _iso(oldest)
+    by_week, cursor = [], datetime.fromisoformat(_week(max(since, oldest))).date()
     while cursor <= until.date():
         by_week.append({"week": cursor.isoformat(), "changes": weeks.get(cursor.isoformat(), 0)})
         cursor += timedelta(days=7)
     block: dict[str, Any] = {
-        "window": {"days": OVERVIEW_WINDOW_DAYS, "since": _iso(since), "until": _iso(until)},
+        "window": window,
         "total": len(rows),
         "by_category": dict(Counter(c for _, c, _ in rows).most_common()),
         "by_week": by_week,

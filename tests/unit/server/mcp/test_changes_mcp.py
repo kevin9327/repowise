@@ -262,6 +262,9 @@ async def test_overview_changes_by_category_week_and_agent_share(setup_mcp, sess
     assert block["window"]["until"].startswith("2026-03-15")
     assert block["by_category"] == {"feature": 3, "fix": 1}
     weeks = {w["week"]: w["changes"] for w in block["by_week"]}
+    # History starts inside the window: earlier weeks are unknown, not zero.
+    assert block["window"]["history_from"].startswith("2026-03-01")
+    assert block["by_week"][0]["week"] == "2026-02-23"
     assert weeks["2026-02-23"] == 1 and weeks["2026-03-02"] == 2 and weeks["2026-03-09"] == 1
     assert sum(weeks.values()) == 4
     prov = block["provenance"]

@@ -352,6 +352,10 @@ def test_changes_by_category_and_week_plot_the_source_counts():
     week = _build(data, "overview", "get_overview", "changes.by_week")
     assert week["chart_type"] == "line"
     assert _series(week, "changes") == [3, 1]
+    # A shorter indexed history names where it starts instead of the full window.
+    data["changes"]["window"]["history_from"] = "2026-03-02T09:00:00+00:00"
+    week = _build(data, "overview", "get_overview", "changes.by_week")
+    assert "since 2026-03-02" in week["summary"] and "90 days" not in week["summary"]
 
 
 def test_changes_provenance_keeps_unknown_as_its_own_band():

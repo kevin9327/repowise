@@ -721,6 +721,9 @@ def _changes_block(artifact: ViewArtifact) -> Mapping[str, Any]:
 
 def _window(block: Mapping[str, Any]) -> str:
     window = block.get("window")
+    start = window.get("history_from") if isinstance(window, Mapping) else None
+    if isinstance(start, str):
+        return f" since {start[:10]}, where the indexed history starts"
     days = window.get("days") if isinstance(window, Mapping) else None
     return f" over the last {days} days of merged changes" if isinstance(days, int) else ""
 
