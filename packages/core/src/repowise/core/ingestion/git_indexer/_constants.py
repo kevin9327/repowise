@@ -327,6 +327,10 @@ HOTSPOT_HALFLIFE_DAYS: float = 180.0
 #: v3: commits carry their category, and changes are rebuilt from history.
 GIT_HISTORY_VERSION: int = 3
 GIT_HISTORY_VERSION_KEY = "git_history_version"
+#: Stored under :data:`GIT_HISTORY_VERSION_KEY` by ``repowise attribution
+#: backfill`` so the next update re-walks history to label the newly bound
+#: commits, and can say so instead of reporting a rules change.
+GIT_HISTORY_BACKFILL_REWALK = "attribution-backfill"
 
 
 def git_history_stale(state: dict[str, Any]) -> bool:

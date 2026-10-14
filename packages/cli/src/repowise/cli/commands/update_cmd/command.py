@@ -43,6 +43,7 @@ from repowise.cli.helpers import (
 )
 from repowise.core.docs_mode import docs_mode_state_fields, resolve_docs_mode
 from repowise.core.ingestion.git_indexer import (
+    GIT_HISTORY_BACKFILL_REWALK,
     GIT_HISTORY_VERSION,
     GIT_HISTORY_VERSION_KEY,
     git_history_stale,
@@ -1135,7 +1136,10 @@ def run_update(
         )
     if history_stale:
         console.print(
-            "[yellow]Git history rules changed since this index was built; "
+            "[yellow]Re-reading git history once to label commits from the "
+            "attribution backfill.[/yellow]"
+            if state.get(GIT_HISTORY_VERSION_KEY) == GIT_HISTORY_BACKFILL_REWALK
+            else "[yellow]Git history rules changed since this index was built; "
             "re-reading the full history once.[/yellow]"
         )
     # Deliberately not in ``git_is_current``: the rescan does its own full parse,
