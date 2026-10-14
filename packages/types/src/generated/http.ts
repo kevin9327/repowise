@@ -2672,6 +2672,7 @@ export interface PackageUsageSite {
   statement?: string | null;
   component?: string | null;
   owners: string[];
+  owner_counts?: Record<string, number> | null;
   reachability: PackageUsageReachability;
 }
 
