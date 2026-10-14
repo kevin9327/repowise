@@ -8,6 +8,7 @@ from typing import Any
 from repowise.core.report.model import (
     ReportContext,
     Section,
+    capped_names,
     check,
     component_summary,
     report_sections,
@@ -103,18 +104,45 @@ def _outcome(ownership: dict[str, Any], basis: str) -> str:
     return "nothing to note"
 
 
-def _ownership_item(name: str, ownership: dict[str, Any]) -> dict[str, Any]:
-    unknown = _unknown_owners(ownership)
-    return check(
-        f"ownership:{name}",
-        reason=(
-            f"activity of {unknown} declared owner(s) is unknown: no indexed commit "
-            "matches them, so whether they still change this component cannot be checked"
-        ),
-        method=_OWNERSHIP_METHOD,
-        basis="unresolved",
-        data=ownership,
+def _unknown_reason(ownership: dict[str, Any]) -> str:
+    """Why a component's owner activity is unknown; equal text means the same owners
+    (teams by name, individuals and bare handles by count, never by name)."""
+    teams = sorted(
+        t["team"] for t in ownership.get("declared_teams", []) if t.get("activity") == "unknown"
     )
+    who = f" (teams: {', '.join(teams)})" if teams else ""
+    return (
+        f"activity of {_unknown_owners(ownership)} declared owner(s){who} is unknown: no "
+        "indexed commit matches them, so whether they still change this code cannot be checked"
+    )
+
+
+def _ownership_items(unknown: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """Unresolved ownership items: one per distinct reason, naming every component
+    that shares it, so a repo-wide CODEOWNERS line is one row, not one per component."""
+    groups: dict[str, list[str]] = {}
+    for name, ownership in unknown.items():
+        groups.setdefault(_unknown_reason(ownership), []).append(name)
+    out = []
+    for i, (reason, names) in enumerate(groups.items(), 1):
+        if len(names) == 1:
+            label, details = f"ownership:{names[0]}", []
+            data: dict[str, Any] = unknown[names[0]]
+        else:
+            label = "ownership:unknown" if len(groups) == 1 else f"ownership:unknown:{i}"
+            details = [f"{len(names)} component(s): {capped_names(names)}"]
+            data = {"components": names}
+        out.append(
+            check(
+                label,
+                reason=reason,
+                details=details,
+                method=_OWNERSHIP_METHOD,
+                basis="unresolved",
+                data=data,
+            )
+        )
+    return out
 
 
 def _component_item(
@@ -167,6 +195,7 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
     quiet: list[str] = []
     undeclared: list[str] = []
     items: list[dict[str, Any]] = []
+    unknown: dict[str, dict[str, Any]] = {}
     for comp, paths in comps:
         health = rollups.get(comp.name, {}).get("health") or {"basis": "unavailable"}
         figures[comp.name] = {
@@ -189,7 +218,7 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
         if ownership.get("findings") or posture[0] != "measured":
             items.append(_component_item(comp, paths, figures[comp.name], posture))
         if _unknown_owners(ownership):
-            items.append(_ownership_item(comp.name, ownership))
+            unknown[comp.name] = ownership
     out.append(
         component_summary(
             "components",
@@ -201,7 +230,7 @@ async def collect(ctx: ReportContext) -> list[dict[str, Any]]:
             data={"components": figures},
         )
     )
-    return out + items
+    return out + items + _ownership_items(unknown)
 
 
 report_sections.register(

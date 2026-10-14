@@ -78,7 +78,8 @@ def capped(lines: list[str], limit: int = MAX_DETAILS) -> list[str]:
 MAX_NAMES = 30
 
 
-def _names(names: list[str]) -> str:
+def capped_names(names: list[str]) -> str:
+    """*names* joined, cut at :data:`MAX_NAMES` with a count of the rest."""
     shown = ", ".join(names[:MAX_NAMES])
     return shown + (f" and {len(names) - MAX_NAMES} more" if len(names) > MAX_NAMES else "")
 
@@ -101,9 +102,11 @@ def component_summary(
     text leaves out.
     """
     counted = ", ".join(f"{label}: {n}" for label, n in outcomes.items() if n)
-    details = [f"{label}: {_names(names)}" for label, names in (named or {}).items() if names]
+    details = [
+        f"{label}: {capped_names(names)}" for label, names in (named or {}).items() if names
+    ]
     if quiet:
-        details.append(f"nothing to note: {_names(quiet)}")
+        details.append(f"nothing to note: {capped_names(quiet)}")
     return check(
         name,
         reason=f"{sum(outcomes.values())} component(s); {counted or 'none'}",

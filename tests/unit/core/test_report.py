@@ -172,10 +172,22 @@ async def test_unknown_owner_activity_is_unresolved_never_quiet(ctx):
     (ctx.repo_root / ".github").mkdir()
     (ctx.repo_root / ".github" / "CODEOWNERS").write_text("api/ @org/ghosts\n", encoding="utf-8")
     items = await _section("components", ctx)
-    owners = items["ownership:api"]
+    owners = items["ownership:api"]  # a reason only one component has keeps its own item
     assert (owners["basis"], owners["score"]) == ("unresolved", -1)
+    assert "(teams: ghosts)" in owners["reason"]
     assert "owner activity unknown: 1" in items["components"]["reason"]
     assert all("nothing to note" not in d for d in items["components"]["details"])
+
+
+async def test_components_sharing_unknown_owners_fold_into_one_row(ctx):
+    (ctx.repo_root / ".github").mkdir()
+    (ctx.repo_root / ".github" / "CODEOWNERS").write_text("* @org/ghosts\n", encoding="utf-8")
+    items = await _section("components", ctx)
+    row = items["ownership:unknown"]
+    assert (row["basis"], row["data"]) == ("unresolved", {"components": ["api", "web"]})
+    assert row["details"] == ["2 component(s): api, web"]
+    assert not any(n.startswith("ownership:") and n != "ownership:unknown" for n in items)
+    assert "owner activity unknown: 2" in items["components"]["reason"]
 
 
 async def test_hotspots_counted_per_component(ctx):
