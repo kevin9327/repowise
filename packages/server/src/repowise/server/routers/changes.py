@@ -68,22 +68,19 @@ async def list_changes(
 ) -> ChangeListResponse:
     """A page of changes, newest merged first."""
     attribution = await _attribution(session, repo_id)
+    where = crud.ChangeFilter(category=category, shape=shape, q=q)
     if needs_attention:
         # Checklists are built on first view, so the prefiltered set stays
         # small; confirm on the parsed evidence, then page here. Ceiling: if
         # checklists are ever built in bulk, move this filter into SQL.
-        candidates = await crud.list_attention_candidates(
-            session, repo_id, category=category, shape=shape, q=q
-        )
+        candidates = await crud.list_attention_candidates(session, repo_id, where)
         ids = [r.change_id for r in candidates if (evidence_summary(r) or {}).get("attention")]
         total = len(ids)
         rows, _ = await crud.list_changes(
-            session, repo_id, change_ids=ids[offset : offset + limit], limit=None
+            session, repo_id, crud.ChangeFilter(change_ids=ids[offset : offset + limit]), limit=None
         )
     else:
-        rows, total = await crud.list_changes(
-            session, repo_id, category=category, shape=shape, q=q, limit=limit, offset=offset
-        )
+        rows, total = await crud.list_changes(session, repo_id, where, limit=limit, offset=offset)
     items = []
     for r in rows:
         item = summary_from_record(change_record(r, attribution=attribution))

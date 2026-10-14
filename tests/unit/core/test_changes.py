@@ -366,6 +366,7 @@ async def _db(tmp_path: Path, repo_root: Path):
 @pytest.mark.usefixtures("_private_user_config")
 async def test_refresh_rebuilds_then_extends(tmp_path, history):
     from repowise.core.persistence.crud import (
+        ChangeFilter,
         get_change,
         list_changes,
         upsert_git_commits_bulk,
@@ -396,7 +397,7 @@ async def test_refresh_rebuilds_then_extends(tmp_path, history):
             assert await refresh_changes(session, repo_id, r.root, rebuild=False) == 1
             rows, total = await list_changes(session, repo_id, limit=3)
             assert total == 10 and rows[0].head_sha == newer
-            _, fixes = await list_changes(session, repo_id, category="fix")
+            _, fixes = await list_changes(session, repo_id, ChangeFilter(category="fix"))
             assert fixes == 1
     finally:
         await engine.dispose()
