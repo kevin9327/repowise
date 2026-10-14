@@ -70,12 +70,12 @@ async function EvidenceChecklist({ repoId, changeId }: { repoId: string; changeI
       <ul className="divide-y divide-[var(--color-border-default)] text-xs">
         {evidence.items.map((item) => (
           <li key={item.kind} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-2">
-            <span className="w-48 shrink-0 font-medium text-[var(--color-text-primary)]">
+            <span className="w-full shrink-0 font-medium text-[var(--color-text-primary)] sm:w-48">
               {item.label}
             </span>
             <Badge variant={STATUS_VARIANT[item.status]}>{t(STATUS_KEY[item.status])}</Badge>
             <span className="text-[var(--color-text-tertiary)]">{item.basis}</span>
-            <span className="min-w-0 flex-1 break-words text-[var(--color-text-secondary)]">
+            <span className="min-w-[10rem] flex-1 break-words text-[var(--color-text-secondary)]">
               {valueText(item)}
             </span>
           </li>
